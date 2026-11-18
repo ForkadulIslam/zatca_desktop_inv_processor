@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -7,13 +7,19 @@ const { testConnection, getInvoices } = require('./sqlService');
 const isDev = !app.isPackaged;
 const devServerUrl = 'http://localhost:5173';
 const distIndexPath = path.join(__dirname, 'dist', 'index.html');
+const trayIconPath = path.join(__dirname, 'trayIcon.png');
+
+let mainWindow = null;
+let tray = null;
+let isQuitting = false;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1100,
     height: 750,
     minWidth: 850,
     minHeight: 600,
+    icon: trayIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -21,17 +27,87 @@ function createWindow() {
     }
   });
 
+  // Intercept window close (X button): hide to system tray instead of quitting
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+  });
+
   if (isDev) {
-    // In dev / watch mode, wait and connect to Vite dev server for instant HMR
-    loadDevServerWithRetry(win, devServerUrl, 30, 200);
+    loadDevServerWithRetry(mainWindow, devServerUrl, 30, 200);
   } else {
-    // In production, load the built static files
     if (fs.existsSync(distIndexPath)) {
-      win.loadFile(distIndexPath);
+      mainWindow.loadFile(distIndexPath);
     } else {
-      loadDevServerWithRetry(win, devServerUrl, 10, 200);
+      loadDevServerWithRetry(mainWindow, devServerUrl, 10, 200);
     }
   }
+}
+
+/**
+ * Creates and configures the system tray icon and context menu
+ */
+function createTray() {
+  if (tray) return;
+
+  tray = new Tray(trayIconPath);
+  tray.setToolTip('JATCA Invoice Processor (Running in Background)');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Dashboard',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Check SQL Connection',
+      click: async () => {
+        const res = await testConnection();
+        if (tray.displayBalloon) {
+          tray.displayBalloon({
+            title: 'SQL Server Status',
+            content: res.success ? 'Connected to Unimarine' : `Error: ${res.error}`
+          });
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Application',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  // Single click toggles window
+  tray.on('click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  // Double click explicitly opens and focuses window
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
 }
 
 /**
@@ -42,7 +118,6 @@ function loadDevServerWithRetry(win, url, maxRetries = 30, interval = 200) {
 
   const tryConnect = () => {
     const req = http.get(url, (res) => {
-      // Dev server is running! Load it for instant HMR
       win.loadURL(url);
     });
 
@@ -51,12 +126,9 @@ function loadDevServerWithRetry(win, url, maxRetries = 30, interval = 200) {
       if (retries < maxRetries) {
         setTimeout(tryConnect, interval);
       } else {
-        // If dev server never started, fall back to built dist/index.html
         if (fs.existsSync(distIndexPath)) {
-          console.log('[Dev] Dev server not detected; loading dist/index.html');
           win.loadFile(distIndexPath);
         } else {
-          console.error('[Dev] Could not connect to dev server and no dist/index.html found.');
           win.loadURL(url);
         }
       }
@@ -80,7 +152,7 @@ if (isDev) {
           reloadTimeout = setTimeout(() => {
             console.log(`[Watch] Detected change in ${file}. Restarting application...`);
             if (file === 'preload.js') {
-              BrowserWindow.getAllWindows().forEach((w) => w.reload());
+              if (mainWindow) mainWindow.reload();
             } else {
               app.relaunch();
               app.exit(0);
@@ -92,6 +164,11 @@ if (isDev) {
   });
 }
 
+// Window / Tray IPC Controls
+ipcMain.on('window:minimize-to-tray', () => {
+  if (mainWindow) mainWindow.hide();
+});
+
 // SQL Server IPC Handlers
 ipcMain.handle('sql:test-connection', async () => {
   return await testConnection();
@@ -101,14 +178,27 @@ ipcMain.handle('sql:get-invoices', async (event, limit = 50) => {
   return await getInvoices(limit);
 });
 
+// Lifecycle
 app.whenReady().then(() => {
   createWindow();
+  createTray();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
   });
 });
 
+// Prevent exiting when windows close; keep alive in system tray
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // Do nothing: tray icon keeps application running
+});
+
+// Explicit quit handler
+app.on('before-quit', () => {
+  isQuitting = true;
 });

@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chrome: process.versions.chrome,
   // SQL Server IPC methods
   testDbConnection: () => ipcRenderer.invoke('sql:test-connection'),
-  getInvoices: (limit) => ipcRenderer.invoke('sql:get-invoices', limit)
+  getInvoices: (limit) => ipcRenderer.invoke('sql:get-invoices', limit),
+  // Window / Tray controls
+  minimizeToTray: () => ipcRenderer.send('window:minimize-to-tray')
 });

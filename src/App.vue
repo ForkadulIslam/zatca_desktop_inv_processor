@@ -12,8 +12,17 @@
         </div>
       </div>
 
-      <!-- DB Status Badge -->
+      <!-- Header Actions & DB Status Badge -->
       <div class="flex items-center gap-3">
+        <button
+          @click="minimizeToTray"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-slate-300 border border-slate-700/80 transition cursor-pointer"
+          title="Hide to Windows system tray"
+        >
+          <span>📥</span>
+          <span>Hide to Tray</span>
+        </button>
+
         <button
           @click="checkConnection"
           :disabled="isCheckingDb"
@@ -349,6 +358,12 @@ function truncate(str, len = 20) {
 function openDetails(inv) {
   selectedInvoice.value = inv;
   copiedKey.value = null;
+}
+
+function minimizeToTray() {
+  if (window.electronAPI?.minimizeToTray) {
+    window.electronAPI.minimizeToTray();
+  }
 }
 
 async function copyText(text, key) {
