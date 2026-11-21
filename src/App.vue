@@ -1007,42 +1007,13 @@ async function handleZatcaVerify(inv) {
     const rows = itemsRes.rows;
     const firstRow = rows[0];
 
-    // 2. Extract Year, Date, and Time for invoice payload
+    // 2. Prepare invoice payload using direct SQL-formatted date/time
     // Format of invoice number: INV-Year-Mdocnum, ex: INV-2026-00044
-    let year = '2026';
-    let dateStr = '2026-11-16';
-    let timeStr = '12:00:00';
-
-    const rawMtrxDate = firstRow.Mtrxdate || inv.MtrxdateA || '';
-    const ymdMatch = String(rawMtrxDate).match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-    const dmyMatch = String(rawMtrxDate).match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-
-    if (ymdMatch) {
-      year = ymdMatch[1];
-      dateStr = `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
-    } else if (dmyMatch) {
-      year = dmyMatch[3];
-      dateStr = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
-    }
-
-    // Time: check SYSDATE first, or non-midnight time in Mtrxdate, or current local time
-    const rawSysDate = firstRow.SYSDATE || '';
-    const timeMatch = String(rawSysDate).match(/(\d{2}:\d{2}:\d{2})/);
-    if (timeMatch) {
-      timeStr = timeMatch[1];
-    } else {
-      const mtrxTimeMatch = String(rawMtrxDate).match(/(\d{2}:\d{2}:\d{2})/);
-      if (mtrxTimeMatch && mtrxTimeMatch[1] !== '00:00:00') {
-        timeStr = mtrxTimeMatch[1];
-      } else {
-        timeStr = new Date().toTimeString().split(' ')[0];
-      }
-    }
-
-    // Format invoice number: INV-Year-Mdocnum, ex: INV-2026-00044
+    const year = firstRow.TrxYear || new Date().getFullYear();
+    const dateStr = firstRow.TrxDate || new Date().toISOString().split('T')[0];
+    const timeStr = firstRow.TrxTime || '12:00:00';
     const cleanDoc = String(docnum).trim();
-    const paddedDoc = cleanDoc.length < 5 ? cleanDoc.padStart(5, '0') : cleanDoc;
-    const invoiceNumber = `INV-${year}-${paddedDoc}`;
+    const invoiceNumber = `INV-${year}-${cleanDoc.padStart(5, '0')}`;
 
     // 3. Format items: name, quantity, price, vat_percent=0.15
     const items = rows.map((r) => ({
@@ -1159,14 +1130,14 @@ async function fetchInvoices() {
 
     if (res.success) {
       effectiveDate.value = res.effectiveDate || '';
-      // Map rows directly to the 6 target column names (with lowercase fallback)
+      // Direct column mapping
       invoices.value = (res.rows || []).map((r) => ({
-        Mdocnum: r.Mdocnum ?? r.mdocnum ?? '',
-        MtrxdateA: r.MtrxdateA ?? r.mtrxdatea ?? '',
-        MsupcusName: r.MsupcusName ?? r.msupcusname ?? '',
-        vatno: r.vatno ?? r.VATNO ?? '',
-        INVOICE_QRCODE: r.INVOICE_QRCODE ?? r.Invoice_qrcode ?? r.invoice_qrcode ?? '',
-        INVOICE_HASHKEY: r.INVOICE_HASHKEY ?? r.invoice_haskey ?? r.invoice_hashkey ?? ''
+        Mdocnum: r.Mdocnum || '',
+        MtrxdateA: r.MtrxdateA || '',
+        MsupcusName: r.MsupcusName || '',
+        vatno: r.vatno || '',
+        INVOICE_QRCODE: r.INVOICE_QRCODE || '',
+        INVOICE_HASHKEY: r.INVOICE_HASHKEY || ''
       }));
 
       console.log('✅ Invoices loaded:', invoices.value);

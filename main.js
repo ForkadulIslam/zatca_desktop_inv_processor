@@ -27,7 +27,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
-// Handle second instance launch
+// Handle second instance launch: bring window to focus
 app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -35,20 +35,6 @@ app.on('second-instance', () => {
     mainWindow.focus();
   }
 });
-
-/**
- * Loads persisted configuration using centralized config module
- */
-function loadConfig() {
-  return config.getConfig();
-}
-
-/**
- * Persists configuration to file using centralized config module
- */
-function saveConfig(newConfig) {
-  return config.saveConfig(newConfig);
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -64,7 +50,6 @@ function createWindow() {
     }
   });
 
-  // Automatically open Chrome DevTools for inspection in development
   if (isDev) {
     mainWindow.webContents.openDevTools();
   }
@@ -80,12 +65,10 @@ function createWindow() {
 
   if (isDev) {
     loadDevServerWithRetry(mainWindow, devServerUrl, 30, 200);
+  } else if (fs.existsSync(distIndexPath)) {
+    mainWindow.loadFile(distIndexPath);
   } else {
-    if (fs.existsSync(distIndexPath)) {
-      mainWindow.loadFile(distIndexPath);
-    } else {
-      loadDevServerWithRetry(mainWindow, devServerUrl, 10, 200);
-    }
+    loadDevServerWithRetry(mainWindow, devServerUrl, 10, 200);
   }
 }
 
@@ -111,9 +94,9 @@ function createTray() {
     {
       label: 'Check SQL Connection',
       click: async () => {
-        const config = loadConfig();
-        const res = await testConnection(config.connectionString);
-        if (tray && tray.displayBalloon) {
+        const activeCfg = config.getConfig();
+        const res = await testConnection(activeCfg.connectionString);
+        if (tray?.displayBalloon) {
           tray.displayBalloon({
             title: 'SQL Server Status',
             content: res.success ? `Connected to ${res.database || 'Database'}` : `Error: ${res.error}`
@@ -161,30 +144,23 @@ function createTray() {
 }
 
 /**
- * Retries connecting to Vite dev server until it's ready, then loads the URL
+ * Retries connecting to Vite dev server until ready
  */
 function loadDevServerWithRetry(win, url, maxRetries = 30, interval = 200) {
   let retries = 0;
-
   const tryConnect = () => {
-    const req = http.get(url, (res) => {
-      win.loadURL(url);
-    });
-
+    const req = http.get(url, () => { win.loadURL(url); });
     req.on('error', () => {
       retries++;
       if (retries < maxRetries) {
         setTimeout(tryConnect, interval);
+      } else if (fs.existsSync(distIndexPath)) {
+        win.loadFile(distIndexPath);
       } else {
-        if (fs.existsSync(distIndexPath)) {
-          win.loadFile(distIndexPath);
-        } else {
-          win.loadURL(url);
-        }
+        win.loadURL(url);
       }
     });
   };
-
   tryConnect();
 }
 
@@ -200,7 +176,7 @@ if (isDev) {
         if (eventType === 'change') {
           clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
-            console.log(`[Watch] Detected change in ${file}. Restarting application...`);
+            console.log(`[Watch] Detected change in ${file}. Reloading...`);
             if (file === 'preload.js') {
               if (mainWindow) mainWindow.reload();
             } else {
@@ -214,54 +190,16 @@ if (isDev) {
   });
 }
 
-// Window / Tray IPC Controls
-ipcMain.on('window:minimize-to-tray', () => {
-  if (mainWindow) mainWindow.hide();
-});
-
-// Config Persistence IPC Handlers
-ipcMain.handle('config:get', async () => {
-  return loadConfig();
-});
-
-ipcMain.handle('config:save', async (event, newConfig) => {
-  return saveConfig(newConfig);
-});
-
-ipcMain.handle('config:open-folder', async () => {
-  try {
-    const curConfig = config.getConfig();
-    if (curConfig.configFilePath) {
-      shell.showItemInFolder(curConfig.configFilePath);
-      return { success: true };
-    }
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-// SQL Server IPC Handlers with dynamic parameters
-ipcMain.handle('sql:test-connection', async (event, connectionString) => {
-  return await testConnection(connectionString);
-});
-
-ipcMain.handle('sql:get-invoices', async (event, params) => {
-  return await getInvoices(params);
-});
-
 /**
  * Sends prepared invoice payload to ZATCA issue-invoice API
- * @param {object} payload
- * @param {string} [endpointUrl]
  */
 async function sendZatcaInvoice(payload, endpointUrl) {
-  const endpoint = config.getZatcaEndpoint(endpointUrl);
+  const endpoint = config.resolveZatcaEndpoint(endpointUrl);
   console.log('[ZATCA] Sending invoice to:', endpoint);
-  console.log('[ZATCA] Payload:', JSON.stringify(payload, null, 2));
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -279,7 +217,7 @@ async function sendZatcaInvoice(payload, endpointUrl) {
     let data;
     try {
       data = JSON.parse(text);
-    } catch (e) {
+    } catch {
       data = { raw: text };
     }
 
@@ -308,17 +246,31 @@ async function sendZatcaInvoice(payload, endpointUrl) {
   }
 }
 
-ipcMain.handle('sql:get-branch-info', async (event, params) => {
-  return await getBranchInfo(params);
+// Window & Tray Controls
+ipcMain.on('window:minimize-to-tray', () => {
+  if (mainWindow) mainWindow.hide();
 });
 
-ipcMain.handle('sql:get-invoice-items', async (event, params) => {
-  return await getInvoiceItems(params);
+// Centralized Configuration IPC Handlers
+ipcMain.handle('config:get', () => config.getConfig());
+ipcMain.handle('config:save', (event, newConfig) => config.saveConfig(newConfig));
+ipcMain.handle('config:open-folder', () => {
+  try {
+    shell.showItemInFolder(config.configFilePath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
-ipcMain.handle('zatca:issue-invoice', async (event, { payload, endpoint }) => {
-  return await sendZatcaInvoice(payload, endpoint);
-});
+// SQL Server IPC Handlers
+ipcMain.handle('sql:test-connection', (event, connStr) => testConnection(connStr));
+ipcMain.handle('sql:get-invoices', (event, params) => getInvoices(params));
+ipcMain.handle('sql:get-branch-info', (event, params) => getBranchInfo(params));
+ipcMain.handle('sql:get-invoice-items', (event, params) => getInvoiceItems(params));
+
+// ZATCA Issue-Invoice IPC Handler
+ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint }) => sendZatcaInvoice(payload, endpoint));
 
 // App Lifecycle
 app.whenReady().then(() => {

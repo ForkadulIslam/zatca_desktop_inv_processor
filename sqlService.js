@@ -1,22 +1,22 @@
 const { spawn } = require('child_process');
-const path = require('path');
-const { getDbConnectionString, getTableName } = require('./config');
+const config = require('./config');
 
 /**
- * Executes a query against the SQL Server using Windows Trusted Connection
+ * Executes a query against SQL Server using Windows Trusted Connection
  * @param {string} query SQL query to execute
  * @param {string} [connectionString] Optional dynamic connection string
  * @returns {Promise<Array<object>>}
  */
 function querySQL(query, connectionString) {
-  let connStr = (connectionString && connectionString.trim()) ? connectionString.trim() : getDbConnectionString();
-  // Ensure Pooling=false is included if not specified to prevent AppContainer performance counter restrictions
+  let connStr = (connectionString && connectionString.trim())
+    ? connectionString.trim()
+    : config.getConfig().connectionString;
+
   if (!/pooling\s*=/i.test(connStr)) {
     connStr = connStr.replace(/;?\s*$/, ';Pooling=false;');
   }
 
   return new Promise((resolve, reject) => {
-    // PowerShell script to execute query and format as clean, flat JSON
     const psScript = `
       $connString = @"
 ${connStr.replace(/"/g, '`"')}
@@ -26,7 +26,7 @@ ${connStr.replace(/"/g, '`"')}
         $conn.Open()
         $cmd = $conn.CreateCommand()
         $cmd.CommandText = @"
-${query.replace(/"/g, '`"')}
+${query.replace(/[`$"]/g, '`$&')}
 "@
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $dt = New-Object System.Data.DataTable
@@ -70,13 +70,8 @@ ${query.replace(/"/g, '`"')}
     let stdout = '';
     let stderr = '';
 
-    ps.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    ps.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
+    ps.stdout.on('data', (d) => { stdout += d.toString(); });
+    ps.stderr.on('data', (d) => { stderr += d.toString(); });
 
     ps.on('close', (code) => {
       if (code !== 0) {
@@ -84,25 +79,20 @@ ${query.replace(/"/g, '`"')}
       }
       try {
         const cleaned = stdout.trim();
-        if (!cleaned) {
-          return resolve([]);
-        }
+        if (!cleaned) return resolve([]);
         const parsed = JSON.parse(cleaned);
         resolve(Array.isArray(parsed) ? parsed : [parsed]);
       } catch (err) {
-        reject(new Error(`Failed to parse SQL output as JSON: ${err.message}. Raw: ${stdout}`));
+        reject(new Error(`Failed to parse SQL output as JSON: ${err.message}`));
       }
     });
 
-    ps.on('error', (err) => {
-      reject(err);
-    });
+    ps.on('error', reject);
   });
 }
 
 /**
- * Tests connection to SQL Server with dynamic connection string
- * @param {string} [connectionString]
+ * Tests connection to SQL Server
  */
 async function testConnection(connectionString) {
   try {
@@ -119,68 +109,40 @@ async function testConnection(connectionString) {
 }
 
 /**
- * Fetches branch information and returns the zatca_post_effective date
- * @param {object} options
- * @param {string} [options.connString]
- * @param {string} [options.tableName]
- * @param {number} [options.limit]
- * @returns {Promise<{success: boolean, date?: string, rows?: Array<object>, error?: string}>}
+ * Normalizes any date string (YYYY-MM-DD or DD/MM/YYYY) to SQL format YYYY-MM-DD
  */
-async function getBranchInfo({ connString, tableName = 'branch_info', limit = 1 } = {}) {
-  const cleanTable = (tableName || 'branch_info').trim().replace(/[[\];]/g, '');
-
-  try {
-    const query = `
-      SELECT TOP ${limit}
-        zatca_post_effective AS EffectiveDate
-      FROM [${cleanTable}]
-      ORDER BY BTN_ID DESC
-    `;
-    const rows = await querySQL(query, connString);
-    const date = rows && rows.length > 0 && rows[0].EffectiveDate ? rows[0].EffectiveDate : null;
-    return { success: true, date, rows };
-  } catch (error) {
-    // Fallback if BTN_ID doesn't exist
-    try {
-      const fallbackQuery = `
-        SELECT TOP ${limit}
-          zatca_post_effective AS EffectiveDate
-        FROM [${cleanTable}]
-      `;
-      const fallbackRows = await querySQL(fallbackQuery, connString);
-      const date = fallbackRows && fallbackRows.length > 0 && fallbackRows[0].EffectiveDate ? fallbackRows[0].EffectiveDate : null;
-      return { success: true, date, rows: fallbackRows };
-    } catch (fallbackError) {
-      return { success: false, error: fallbackError.message, date: null, rows: [] };
-    }
-  }
-}
-
-function formatToSqlDate(d) {
+function normalizeDate(d) {
   if (!d) return null;
   const str = String(d).trim();
-  // Match YYYY-MM-DD
   const ymd = str.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (ymd) {
-    return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
-  }
-  // Match DD/MM/YYYY
+  if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
   const dmy = str.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-  if (dmy) {
-    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-  }
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return str.split(' ')[0];
 }
 
 /**
- * Fetches unposted invoices from dynamic table using branch effective date filter
- * Grouped by Mdocnum where Mrefnumber, INVOICE_QRCODE, and INVOICE_HASHKEY are null
- * @param {object} options
- * @param {string} [options.connString]
- * @param {string} [options.tableName]
- * @param {number} [options.limit]
- * @param {string} [options.branchTable]
- * @param {string} [options.effectiveDate]
+ * Fetches branch effective posting date
+ */
+async function getBranchInfo({ connString, tableName = 'branch_info', limit = 1 } = {}) {
+  const cleanTable = tableName.trim().replace(/[[\];]/g, '');
+  try {
+    const query = `
+      SELECT TOP ${limit}
+        CONVERT(VARCHAR(10), zatca_post_effective, 120) AS EffectiveDate
+      FROM [${cleanTable}]
+      ORDER BY BTN_ID DESC
+    `;
+    const rows = await querySQL(query, connString);
+    const date = rows?.[0]?.EffectiveDate || null;
+    return { success: true, date, rows };
+  } catch (error) {
+    return { success: false, error: error.message, date: null, rows: [] };
+  }
+}
+
+/**
+ * Fetches unposted invoices grouped by Mdocnum filtered by branch effective date
  */
 async function getInvoices({
   connString,
@@ -189,11 +151,9 @@ async function getInvoices({
   branchTable = 'branch_info',
   effectiveDate
 } = {}) {
-  const activeConn = connString || getDbConnectionString();
-  const activeTable = tableName || getTableName();
-  const cleanTable = activeTable.trim().replace(/[[\];]/g, '');
+  const activeConn = connString || config.getConfig().connectionString;
+  const activeTable = (tableName || config.getConfig().tableName).trim().replace(/[[\];]/g, '');
 
-  // 1. Retrieve the effective date from getBranchInfo if not provided
   let targetDate = effectiveDate;
   if (!targetDate) {
     const branchRes = await getBranchInfo({ connString: activeConn, tableName: branchTable });
@@ -202,104 +162,58 @@ async function getInvoices({
     }
   }
 
-  const formattedDate = formatToSqlDate(targetDate);
+  const formattedDate = normalizeDate(targetDate);
+  const dateFilter = formattedDate
+    ? `AND (CASE WHEN MtrxdateA LIKE '__/__/____' THEN CONVERT(DATETIME, MtrxdateA, 103) ELSE NULL END >= '${formattedDate}')`
+    : '';
 
-  // 2. Build WHERE conditions:
-  // - MtrxdateA >= effectiveDate from getBranchInfo
-  // - Mrefnumber, INVOICE_QRCODE, INVOICE_HASHKEY are null or empty
-  const conditions = [];
-
-  if (formattedDate) {
-    conditions.push(`(
-      CASE 
-        WHEN MtrxdateA LIKE '__/__/____' THEN CONVERT(DATETIME, MtrxdateA, 103)
-        WHEN ISDATE(MtrxdateA) = 1 THEN CONVERT(DATETIME, MtrxdateA)
-        ELSE NULL
-      END >= '${formattedDate}'
-    )`);
-  }
-
-  conditions.push(`(Mrefnumber IS NULL OR LTRIM(RTRIM(Mrefnumber)) = '')`);
-  conditions.push(`(INVOICE_QRCODE IS NULL OR LTRIM(RTRIM(INVOICE_QRCODE)) = '')`);
-
-  // Query builder supporting both INVOICE_HASHKEY and invoice_haskey column naming
-  const buildGroupedQuery = (hashCol) => `
+  const query = `
     SELECT TOP ${limit}
       Mdocnum,
       MAX(MtrxdateA) AS MtrxdateA,
       MAX(MsupcusName) AS MsupcusName,
       MAX(vatno) AS vatno,
       MAX(INVOICE_QRCODE) AS INVOICE_QRCODE,
-      MAX(${hashCol}) AS INVOICE_HASHKEY
-    FROM [${cleanTable}]
-    WHERE ${[...conditions, `(${hashCol} IS NULL OR LTRIM(RTRIM(${hashCol})) = '')`].join(' AND ')}
+      MAX(INVOICE_HASHKEY) AS INVOICE_HASHKEY
+    FROM [${activeTable}]
+    WHERE (Mrefnumber IS NULL OR LTRIM(RTRIM(Mrefnumber)) = '')
+      AND (INVOICE_QRCODE IS NULL OR LTRIM(RTRIM(INVOICE_QRCODE)) = '')
+      AND (INVOICE_HASHKEY IS NULL OR LTRIM(RTRIM(INVOICE_HASHKEY)) = '')
+      ${dateFilter}
     GROUP BY Mdocnum
     ORDER BY Mdocnum DESC
   `;
 
   try {
-    const query = buildGroupedQuery('INVOICE_HASHKEY');
-    const rows = await querySQL(query, connString);
+    const rows = await querySQL(query, activeConn);
     return { success: true, effectiveDate: formattedDate || targetDate, rows };
   } catch (error) {
-    // If table uses invoice_haskey spelling (without 'h')
-    try {
-      const altQuery = buildGroupedQuery('invoice_haskey');
-      const altRows = await querySQL(altQuery, connString);
-      return { success: true, effectiveDate: formattedDate || targetDate, rows: altRows };
-    } catch (altError) {
-      // Fallback query if hash column is omitted
-      try {
-        const fallbackQuery = `
-          SELECT TOP ${limit}
-            Mdocnum,
-            MAX(MtrxdateA) AS MtrxdateA,
-            MAX(MsupcusName) AS MsupcusName,
-            MAX(vatno) AS vatno,
-            MAX(INVOICE_QRCODE) AS INVOICE_QRCODE,
-            '' AS INVOICE_HASHKEY
-          FROM [${cleanTable}]
-          WHERE (Mrefnumber IS NULL OR LTRIM(RTRIM(Mrefnumber)) = '')
-            ${formattedDate ? `AND (CASE WHEN MtrxdateA LIKE '__/__/____' THEN CONVERT(DATETIME, MtrxdateA, 103) WHEN ISDATE(MtrxdateA) = 1 THEN CONVERT(DATETIME, MtrxdateA) ELSE NULL END >= '${formattedDate}')` : ''}
-          GROUP BY Mdocnum
-          ORDER BY Mdocnum DESC
-        `;
-        const fallbackRows = await querySQL(fallbackQuery, connString);
-        return { success: true, effectiveDate: formattedDate || targetDate, rows: fallbackRows };
-      } catch (fallbackError) {
-        return { success: false, error: fallbackError.message, effectiveDate: formattedDate || targetDate, rows: [] };
-      }
-    }
+    return { success: false, error: error.message, effectiveDate: formattedDate || targetDate, rows: [] };
   }
 }
 
 /**
- * Fetches invoice transaction line items for a specific Mdocnum
- * Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Munitprice
- * @param {object} options
- * @param {string|number} options.docnum
- * @param {string} [options.connString]
- * @param {string} [options.tableName]
- * @returns {Promise<{success: boolean, rows?: Array<object>, error?: string}>}
+ * Fetches line items for a specific Mdocnum.
+ * Formats TrxDate (YYYY-MM-DD), TrxTime (HH:mm:ss), and TrxYear (YYYY) directly in SQL.
  */
 async function getInvoiceItems({ docnum, connString, tableName } = {}) {
-  const activeConn = connString || getDbConnectionString();
-  const activeTable = tableName || getTableName();
-  const cleanTable = activeTable.trim().replace(/[[\];]/g, '');
+  const activeConn = connString || config.getConfig().connectionString;
+  const activeTable = (tableName || config.getConfig().tableName).trim().replace(/[[\];]/g, '');
   const cleanDocnum = String(docnum).replace(/'/g, "''").trim();
 
+  const query = `
+    SELECT 
+      Mitemname,
+      Outqty,
+      Munitprice,
+      CONVERT(VARCHAR(10), Mtrxdate, 120) AS TrxDate,
+      CONVERT(VARCHAR(8), SYSDATE, 108) AS TrxTime,
+      YEAR(Mtrxdate) AS TrxYear
+    FROM [${activeTable}]
+    WHERE Mdocnum = '${cleanDocnum}'
+  `;
+
   try {
-    const query = `
-      SELECT 
-        Mtrxdate,
-        MtrxdateA,
-        SYSDATE,
-        Mitemname,
-        Outqty,
-        Munitprice
-      FROM [${cleanTable}]
-      WHERE Mdocnum = '${cleanDocnum}'
-    `;
     const rows = await querySQL(query, activeConn);
     return { success: true, rows };
   } catch (error) {
