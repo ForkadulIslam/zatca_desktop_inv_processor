@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { testConnection, getInvoices, getBranchInfo } = require('./sqlService');
+const config = require('./config');
+const { testConnection, getInvoices, getBranchInfo, getInvoiceItems } = require('./sqlService');
 
 // Disable GPU disk cache to eliminate "Unable to move the cache: Access is denied" errors
 app.commandLine.appendSwitch('disable-gpu-cache');
@@ -21,7 +22,6 @@ if (!isDev) {
 const devServerUrl = 'http://localhost:5173';
 const distIndexPath = path.join(__dirname, 'dist', 'index.html');
 const trayIconPath = path.join(__dirname, 'trayIcon.png');
-const configFilePath = path.join(app.getPath('userData'), 'db-config.json');
 
 let mainWindow = null;
 let tray = null;
@@ -37,34 +37,17 @@ app.on('second-instance', () => {
 });
 
 /**
- * Loads persisted configuration
+ * Loads persisted configuration using centralized config module
  */
 function loadConfig() {
-  try {
-    if (fs.existsSync(configFilePath)) {
-      const data = fs.readFileSync(configFilePath, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('[Config] Failed to load configuration:', err);
-  }
-  return {
-    connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
-    tableName: "masterTrx"
-  };
+  return config.getConfig();
 }
 
 /**
- * Persists configuration to file
+ * Persists configuration to file using centralized config module
  */
-function saveConfig(config) {
-  try {
-    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf-8');
-    return { success: true };
-  } catch (err) {
-    console.error('[Config] Failed to save configuration:', err);
-    return { success: false, error: err.message };
-  }
+function saveConfig(newConfig) {
+  return config.saveConfig(newConfig);
 }
 
 function createWindow() {
@@ -113,7 +96,7 @@ function createTray() {
   if (tray) return;
 
   tray = new Tray(trayIconPath);
-  tray.setToolTip('JATCA Invoice Processor (Running in Background)');
+  tray.setToolTip('ZATCA Invoice Processor (Running in Background)');
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -205,9 +188,9 @@ function loadDevServerWithRetry(win, url, maxRetries = 30, interval = 200) {
   tryConnect();
 }
 
-// Watch main process files (main.js, preload.js, sqlService.js) to auto-reload in development
+// Watch main process files to auto-reload in development
 if (isDev) {
-  const watchFiles = ['main.js', 'preload.js', 'sqlService.js'];
+  const watchFiles = ['main.js', 'preload.js', 'sqlService.js', 'config.js'];
   let reloadTimeout = null;
 
   watchFiles.forEach((file) => {
@@ -241,8 +224,20 @@ ipcMain.handle('config:get', async () => {
   return loadConfig();
 });
 
-ipcMain.handle('config:save', async (event, config) => {
-  return saveConfig(config);
+ipcMain.handle('config:save', async (event, newConfig) => {
+  return saveConfig(newConfig);
+});
+
+ipcMain.handle('config:open-folder', async () => {
+  try {
+    const curConfig = config.getConfig();
+    if (curConfig.configFilePath) {
+      shell.showItemInFolder(curConfig.configFilePath);
+      return { success: true };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 // SQL Server IPC Handlers with dynamic parameters
@@ -254,8 +249,75 @@ ipcMain.handle('sql:get-invoices', async (event, params) => {
   return await getInvoices(params);
 });
 
+/**
+ * Sends prepared invoice payload to ZATCA issue-invoice API
+ * @param {object} payload
+ * @param {string} [endpointUrl]
+ */
+async function sendZatcaInvoice(payload, endpointUrl) {
+  const endpoint = config.getZatcaEndpoint(endpointUrl);
+  console.log('[ZATCA] Sending invoice to:', endpoint);
+  console.log('[ZATCA] Payload:', JSON.stringify(payload, null, 2));
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { raw: text };
+    }
+
+    if (!response.ok && !data.success) {
+      return {
+        success: false,
+        status: response.status,
+        error: data.message || `HTTP ${response.status}: ${response.statusText}`,
+        data
+      };
+    }
+
+    return {
+      success: data.success !== undefined ? data.success : true,
+      status: response.status,
+      data
+    };
+  } catch (err) {
+    console.error('[ZATCA] Request failed:', err);
+    return {
+      success: false,
+      error: err.name === 'AbortError'
+        ? 'Request timed out connecting to ZATCA server (20s).'
+        : `Network Error: ${err.message}`
+    };
+  }
+}
+
 ipcMain.handle('sql:get-branch-info', async (event, params) => {
   return await getBranchInfo(params);
+});
+
+ipcMain.handle('sql:get-invoice-items', async (event, params) => {
+  return await getInvoiceItems(params);
+});
+
+ipcMain.handle('zatca:issue-invoice', async (event, { payload, endpoint }) => {
+  return await sendZatcaInvoice(payload, endpoint);
 });
 
 // App Lifecycle

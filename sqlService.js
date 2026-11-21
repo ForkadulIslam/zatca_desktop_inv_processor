@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
-
-const DEFAULT_CONN_STRING = "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;Pooling=false;";
+const { getDbConnectionString, getTableName } = require('./config');
 
 /**
  * Executes a query against the SQL Server using Windows Trusted Connection
@@ -10,7 +9,7 @@ const DEFAULT_CONN_STRING = "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Truste
  * @returns {Promise<Array<object>>}
  */
 function querySQL(query, connectionString) {
-  let connStr = (connectionString && connectionString.trim()) ? connectionString.trim() : DEFAULT_CONN_STRING;
+  let connStr = (connectionString && connectionString.trim()) ? connectionString.trim() : getDbConnectionString();
   // Ensure Pooling=false is included if not specified to prevent AppContainer performance counter restrictions
   if (!/pooling\s*=/i.test(connStr)) {
     connStr = connStr.replace(/;?\s*$/, ';Pooling=false;');
@@ -185,17 +184,19 @@ function formatToSqlDate(d) {
  */
 async function getInvoices({
   connString,
-  tableName = 'masterTrx',
+  tableName,
   limit = 50,
   branchTable = 'branch_info',
   effectiveDate
 } = {}) {
-  const cleanTable = (tableName || 'masterTrx').trim().replace(/[[\];]/g, '');
+  const activeConn = connString || getDbConnectionString();
+  const activeTable = tableName || getTableName();
+  const cleanTable = activeTable.trim().replace(/[[\];]/g, '');
 
   // 1. Retrieve the effective date from getBranchInfo if not provided
   let targetDate = effectiveDate;
   if (!targetDate) {
-    const branchRes = await getBranchInfo({ connString, tableName: branchTable });
+    const branchRes = await getBranchInfo({ connString: activeConn, tableName: branchTable });
     if (branchRes.success && branchRes.date) {
       targetDate = branchRes.date;
     }
@@ -272,9 +273,44 @@ async function getInvoices({
   }
 }
 
+/**
+ * Fetches invoice transaction line items for a specific Mdocnum
+ * Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Munitprice
+ * @param {object} options
+ * @param {string|number} options.docnum
+ * @param {string} [options.connString]
+ * @param {string} [options.tableName]
+ * @returns {Promise<{success: boolean, rows?: Array<object>, error?: string}>}
+ */
+async function getInvoiceItems({ docnum, connString, tableName } = {}) {
+  const activeConn = connString || getDbConnectionString();
+  const activeTable = tableName || getTableName();
+  const cleanTable = activeTable.trim().replace(/[[\];]/g, '');
+  const cleanDocnum = String(docnum).replace(/'/g, "''").trim();
+
+  try {
+    const query = `
+      SELECT 
+        Mtrxdate,
+        MtrxdateA,
+        SYSDATE,
+        Mitemname,
+        Outqty,
+        Munitprice
+      FROM [${cleanTable}]
+      WHERE Mdocnum = '${cleanDocnum}'
+    `;
+    const rows = await querySQL(query, activeConn);
+    return { success: true, rows };
+  } catch (error) {
+    return { success: false, error: error.message, rows: [] };
+  }
+}
+
 module.exports = {
   querySQL,
   testConnection,
   getInvoices,
-  getBranchInfo
+  getBranchInfo,
+  getInvoiceItems
 };

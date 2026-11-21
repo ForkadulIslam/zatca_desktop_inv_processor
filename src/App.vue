@@ -64,14 +64,49 @@
     <main v-if="currentPage === 'connection'" class="flex-1 flex items-center justify-center p-6">
       <div class="w-full max-w-xl bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
         <!-- Header -->
-        <div class="text-center mb-8">
-          <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-cyan-500/20">
-            <span class="text-2xl">🔌</span>
+        <div class="text-center mb-6">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center mx-auto mb-3 shadow-xl shadow-cyan-500/20">
+            <span class="text-2xl">⚙️</span>
           </div>
-          <h2 class="text-2xl font-bold text-white tracking-tight">Database Connection Setup</h2>
-          <p class="text-xs text-slate-400 mt-1.5 max-w-sm mx-auto">
-            Configure your Microsoft SQL Server connection string and target invoice table name.
+          <h2 class="text-2xl font-bold text-white tracking-tight">Application Connection Settings</h2>
+          <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            Centralized configuration for SQL Server, target invoice table, and ZATCA API.
           </p>
+        </div>
+
+        <!-- Centralized Config File Path Banner -->
+        <div v-if="configFilePath" class="mb-5 bg-slate-950/70 border border-slate-800 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-[11px] text-slate-400">
+          <div class="flex items-center gap-2 truncate">
+            <span class="text-slate-500 font-semibold shrink-0">📁 Config File:</span>
+            <span class="font-mono text-cyan-400 truncate" :title="configFilePath">{{ configFilePath }}</span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+            <button
+              type="button"
+              @click="copyText(configFilePath, 'cfg-file-path')"
+              class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+              title="Copy configuration file path"
+            >
+              {{ copiedKey === 'cfg-file-path' ? '✓ Copied' : '📋 Copy' }}
+            </button>
+            <button
+              type="button"
+              @click="openConfigFolder"
+              class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+              title="Open folder containing configuration file"
+            >
+              📂 Open
+            </button>
+          </div>
+        </div>
+
+        <!-- Success Alert Banner -->
+        <div v-if="saveSuccessMsg" class="mb-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs text-emerald-400 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span>✓</span>
+            <span>{{ saveSuccessMsg }}</span>
+          </div>
+          <button type="button" @click="saveSuccessMsg = ''" class="text-emerald-400 hover:text-emerald-200">✕</button>
         </div>
 
         <!-- Form -->
@@ -124,6 +159,23 @@
             </div>
           </div>
 
+          <!-- ZATCA API Endpoint Input -->
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+              ZATCA Issue-Invoice Endpoint
+            </label>
+            <div class="relative">
+              <input
+                v-model="zatcaEndpoint"
+                type="url"
+                required
+                placeholder="http://10.105.114.65:8000/api/zatca/issue-invoice"
+                class="w-full bg-slate-950/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition"
+              />
+            </div>
+            <p class="mt-1 text-[11px] text-slate-500">Base URL or complete endpoint. Used globally for issuing and verifying invoices.</p>
+          </div>
+
           <!-- Error Alert Banner -->
           <div v-if="connectionError" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-xs text-red-400 flex items-start gap-3">
             <span class="text-base leading-none">⚠️</span>
@@ -134,18 +186,28 @@
             <button type="button" @click="connectionError = ''" class="text-red-400 hover:text-red-200 text-sm">✕</button>
           </div>
 
-          <!-- Action Button -->
-          <div class="pt-2">
+          <!-- Action Buttons: Save Only & Save and Connect -->
+          <div class="pt-2 flex items-center gap-3">
+            <button
+              type="button"
+              @click="handleSaveConfigOnly"
+              :disabled="isSavingConfig || !connectionString.trim() || !tableName.trim()"
+              class="flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition text-xs font-semibold text-slate-200 border border-slate-700 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>💾</span>
+              <span>{{ isSavingConfig ? 'Saving...' : 'Save Settings to File' }}</span>
+            </button>
+
             <button
               type="submit"
               :disabled="isConnecting || !connectionString.trim() || !tableName.trim()"
-              class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-semibold text-white shadow-xl shadow-cyan-600/25 flex items-center justify-center gap-2"
+              class="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed transition text-xs font-semibold text-white shadow-xl shadow-cyan-600/25 flex items-center justify-center gap-2 cursor-pointer"
             >
-              <svg v-if="isConnecting" class="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+              <svg v-if="isConnecting" class="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
               </svg>
-              <span>{{ isConnecting ? 'Testing Connection to SQL Server...' : 'Connect & Open Invoices' }}</span>
+              <span>{{ isConnecting ? 'Testing...' : 'Save & Connect' }}</span>
               <span v-if="!isConnecting">→</span>
             </button>
           </div>
@@ -375,12 +437,28 @@
 
                 <!-- 8. Actions -->
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
-                  <button
-                    @click.stop="openDetails(inv)"
-                    class="px-3 py-1 rounded-lg bg-slate-800 group-hover:bg-cyan-600/20 group-hover:text-cyan-400 group-hover:border-cyan-500/30 border border-slate-700/80 active:scale-95 text-xs text-slate-300 transition"
-                  >
-                    Details →
-                  </button>
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      @click.stop="handleZatcaVerify(inv)"
+                      :disabled="verifyingDocnum === inv.Mdocnum"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/40 active:scale-95 text-xs font-semibold transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      title="Verify and issue this invoice with ZATCA Phase 2"
+                    >
+                      <svg v-if="verifyingDocnum === inv.Mdocnum" class="animate-spin h-3.5 w-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                      </svg>
+                      <span v-else>🛡️</span>
+                      <span>{{ verifyingDocnum === inv.Mdocnum ? 'Verifying...' : 'ZATCA Verify' }}</span>
+                    </button>
+
+                    <button
+                      @click.stop="openDetails(inv)"
+                      class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-cyan-600/20 hover:text-cyan-400 hover:border-cyan-500/30 border border-slate-700/80 active:scale-95 text-xs text-slate-300 transition"
+                    >
+                      Details →
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -495,12 +573,222 @@
 
         <!-- Modal Footer -->
         <div class="px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
-          <span class="text-[11px] text-slate-500 font-mono">SQL Column Mapping: Exact</span>
+          <button
+            @click="handleZatcaVerify(selectedInvoice)"
+            :disabled="verifyingDocnum === selectedInvoice.Mdocnum"
+            class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-600/25"
+          >
+            <svg v-if="verifyingDocnum === selectedInvoice.Mdocnum" class="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <span v-else>🛡️</span>
+            <span>{{ verifyingDocnum === selectedInvoice.Mdocnum ? 'Verifying with ZATCA...' : 'ZATCA Verify' }}</span>
+          </button>
+
           <button
             @click="selectedInvoice = null"
             class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition"
           >
             Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- ZATCA VERIFICATION RESULT MODAL                                           -->
+    <!-- ========================================================================= -->
+    <div
+      v-if="isZatcaModalOpen && zatcaResult"
+      class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="isZatcaModalOpen = false"
+    >
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <!-- Result Header -->
+        <div
+          class="px-6 py-4 border-b flex items-center justify-between"
+          :class="zatcaResult.success ? 'bg-emerald-950/40 border-emerald-800/40' : 'bg-red-950/40 border-red-800/40'"
+        >
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              :class="zatcaResult.success ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'"
+            >
+              <span v-if="zatcaResult.success">✓</span>
+              <span v-else>⚠️</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-bold text-white">
+                  {{ zatcaResult.success ? 'ZATCA Verification Succeeded' : 'ZATCA Verification Notice' }}
+                </h3>
+                <span
+                  class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                  :class="zatcaResult.success ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'"
+                >
+                  {{ zatcaResult.success ? 'Issued & Signed' : 'Failed' }}
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Doc #: <strong class="text-cyan-400 font-mono">{{ zatcaResult.docnum }}</strong>
+                <span v-if="zatcaResult.invoiceNumber"> • Number: <strong class="text-white font-mono">{{ zatcaResult.invoiceNumber }}</strong></span>
+                <span> • {{ zatcaResult.timestamp }}</span>
+              </p>
+            </div>
+          </div>
+          <button
+            @click="isZatcaModalOpen = false"
+            class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Result Body -->
+        <div class="p-6 overflow-y-auto flex flex-col gap-4 text-xs text-slate-300">
+          <!-- Primary Message Alert -->
+          <div
+            class="p-4 rounded-xl border flex items-start gap-3"
+            :class="zatcaResult.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'"
+          >
+            <span class="text-lg leading-none">{{ zatcaResult.success ? '🎉' : '❌' }}</span>
+            <div class="flex-1">
+              <strong class="font-semibold block text-sm mb-0.5">
+                {{ zatcaResult.data?.message || (zatcaResult.success ? 'Invoice successfully verified and processed.' : 'Verification Failed') }}
+              </strong>
+              <p v-if="zatcaResult.error" class="text-xs text-red-400 font-mono mt-1 whitespace-pre-wrap break-all">
+                {{ zatcaResult.error }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Compliance Warning (if returned by ZATCA) -->
+          <div
+            v-if="zatcaResult.data?.compliance?.warning"
+            class="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-2.5"
+          >
+            <span class="text-base leading-none">⚠️</span>
+            <div>
+              <strong class="font-semibold block text-xs">ZATCA Compliance Notice:</strong>
+              <p class="text-xs text-amber-200/90 font-mono mt-0.5">{{ zatcaResult.data.compliance.warning }}</p>
+            </div>
+          </div>
+
+          <!-- Metadata Badges Grid -->
+          <div v-if="zatcaResult.data?.invoice_id || zatcaResult.data?.invoice_counter || zatcaResult.data?.unit" class="grid grid-cols-3 gap-3">
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+              <span class="text-slate-500 text-[10px] font-semibold uppercase block">Invoice ID</span>
+              <span class="text-white font-mono font-bold text-sm">{{ zatcaResult.data?.invoice_id ?? '—' }}</span>
+            </div>
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+              <span class="text-slate-500 text-[10px] font-semibold uppercase block">Invoice Counter</span>
+              <span class="text-cyan-400 font-mono font-bold text-sm">#{{ zatcaResult.data?.invoice_counter ?? '—' }}</span>
+            </div>
+            <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+              <span class="text-slate-500 text-[10px] font-semibold uppercase block">Unit Status</span>
+              <span class="inline-flex items-center gap-1 text-emerald-400 font-medium text-xs mt-0.5">
+                <span>●</span>
+                <span class="capitalize">{{ zatcaResult.data?.unit?.status || 'Active' }}</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- QR Code Preview & Download Link -->
+          <div v-if="zatcaResult.data?.qr_url" class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4">
+            <div class="bg-white p-2.5 rounded-xl shadow-md border border-slate-700 shrink-0">
+              <img :src="zatcaResult.data.qr_url" alt="ZATCA Phase 2 QR Code" class="w-28 h-28 object-contain" />
+            </div>
+            <div class="flex-1 flex flex-col gap-1.5 text-center md:text-left">
+              <span class="text-slate-400 font-semibold text-xs flex items-center justify-center md:justify-start gap-1">
+                <span>📱</span>
+                <span>ZATCA Phase 2 QR Code</span>
+              </span>
+              <p class="text-[11px] text-slate-500 break-all font-mono">{{ zatcaResult.data.qr_url }}</p>
+              <div class="mt-1 flex items-center justify-center md:justify-start gap-2">
+                <button
+                  @click="copyText(zatcaResult.data.qr_url, 'res-qr-url')"
+                  class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition cursor-pointer"
+                >
+                  {{ copiedKey === 'res-qr-url' ? '✓ Copied URL' : 'Copy QR URL' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Invoice Hashes -->
+          <div v-if="zatcaResult.data?.invoice_hash" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400 uppercase tracking-wider text-[10px] font-semibold flex items-center gap-1.5">
+                <span>🔑</span>
+                <span>Invoice Hash (SHA-256)</span>
+              </span>
+              <button
+                @click="copyText(zatcaResult.data.invoice_hash, 'res-inv-hash')"
+                class="text-cyan-400 hover:text-cyan-300 text-[11px] font-medium transition cursor-pointer"
+              >
+                {{ copiedKey === 'res-inv-hash' ? '✓ Copied!' : 'Copy Hash' }}
+              </button>
+            </div>
+            <p class="font-mono text-[11px] text-cyan-300 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 break-all select-all">
+              {{ zatcaResult.data.invoice_hash }}
+            </p>
+          </div>
+
+          <div v-if="zatcaResult.data?.previous_invoice_hash" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400 uppercase tracking-wider text-[10px] font-semibold flex items-center gap-1.5">
+                <span>🔗</span>
+                <span>Previous Invoice Hash (Chain)</span>
+              </span>
+              <button
+                @click="copyText(zatcaResult.data.previous_invoice_hash, 'res-prev-hash')"
+                class="text-indigo-400 hover:text-indigo-300 text-[11px] font-medium transition cursor-pointer"
+              >
+                {{ copiedKey === 'res-prev-hash' ? '✓ Copied!' : 'Copy Hash' }}
+              </button>
+            </div>
+            <p class="font-mono text-[11px] text-indigo-300 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 break-all select-all">
+              {{ zatcaResult.data.previous_invoice_hash }}
+            </p>
+          </div>
+
+          <!-- Collapsible Request Payload & Server Response for Debugging -->
+          <details class="bg-slate-950/50 border border-slate-800 rounded-xl overflow-hidden group">
+            <summary class="p-3 text-[11px] font-semibold text-slate-400 hover:text-slate-200 cursor-pointer select-none flex items-center justify-between">
+              <span>View Sent JSON Payload ({{ zatcaResult.payload?.items?.length || 0 }} items)</span>
+              <span class="text-xs group-open:rotate-180 transition">▼</span>
+            </summary>
+            <div class="p-3 border-t border-slate-800 bg-slate-950/90">
+              <pre class="font-mono text-[11px] text-slate-300 overflow-x-auto whitespace-pre">{{ JSON.stringify(zatcaResult.payload, null, 2) }}</pre>
+            </div>
+          </details>
+
+          <details v-if="zatcaResult.data" class="bg-slate-950/50 border border-slate-800 rounded-xl overflow-hidden group">
+            <summary class="p-3 text-[11px] font-semibold text-slate-400 hover:text-slate-200 cursor-pointer select-none flex items-center justify-between">
+              <span>View Full Server Response</span>
+              <span class="text-xs group-open:rotate-180 transition">▼</span>
+            </summary>
+            <div class="p-3 border-t border-slate-800 bg-slate-950/90">
+              <pre class="font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre">{{ JSON.stringify(zatcaResult.data, null, 2) }}</pre>
+            </div>
+          </details>
+        </div>
+
+        <!-- Result Footer -->
+        <div class="px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+          <button
+            @click="fetchInvoices"
+            class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5"
+          >
+            <span>🔄</span>
+            <span>Refresh Invoice List</span>
+          </button>
+          <button
+            @click="isZatcaModalOpen = false"
+            class="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white transition shadow-lg shadow-cyan-600/25"
+          >
+            Done
           </button>
         </div>
       </div>
@@ -520,13 +808,33 @@ import { ref, computed, onMounted } from 'vue';
 // Navigation & Screen View
 const currentPage = ref('connection'); // 'connection' | 'invoices'
 
-// Dynamic Connection Form State
-const connectionString = ref('Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;');
-const tableName = ref('masterTrx');
+// Centralized Global Configuration Defaults
+const DEFAULT_CONFIG = {
+  connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
+  tableName: "masterTrx",
+  zatcaApiBase: "http://10.105.114.65:8000/api",
+  zatcaEndpoint: "http://10.105.114.65:8000/api/zatca/issue-invoice"
+};
+
+// Centralized Dynamic Connection Form State
+const connectionString = ref(DEFAULT_CONFIG.connectionString);
+const tableName = ref(DEFAULT_CONFIG.tableName);
+const zatcaEndpoint = ref(DEFAULT_CONFIG.zatcaEndpoint);
+const configFilePath = ref('');
+const saveSuccessMsg = ref('');
+const isSavingConfig = ref(false);
 const activeDbName = ref('');
 const isConnecting = ref(false);
 const isConnected = ref(false);
 const connectionError = ref('');
+
+/**
+ * Normalizes any ZATCA URL (base /api or full route) to the issue-invoice endpoint
+ */
+function resolveZatcaEndpoint(url) {
+  const base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
+  return base.endsWith('/zatca/issue-invoice') ? base : `${base}/zatca/issue-invoice`;
+}
 
 // Invoices State
 const invoices = ref([]);
@@ -539,6 +847,11 @@ const invoiceError = ref('');
 const lastUpdated = ref('');
 const selectedInvoice = ref(null);
 const copiedKey = ref(null);
+
+// ZATCA Verification State
+const verifyingDocnum = ref(null);
+const zatcaResult = ref(null);
+const isZatcaModalOpen = ref(false);
 
 // Extract Database name from connection string dynamically using regex
 const detectedDbName = computed(() => {
@@ -565,10 +878,48 @@ const statusBadgeText = computed(() => {
   return 'Disconnected';
 });
 
-// Reset to Default Preset
+// Reset to Default Centralized Preset
 function resetToDefault() {
-  connectionString.value = 'Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;';
-  tableName.value = 'masterTrx';
+  connectionString.value = DEFAULT_CONFIG.connectionString;
+  tableName.value = DEFAULT_CONFIG.tableName;
+  zatcaEndpoint.value = DEFAULT_CONFIG.zatcaEndpoint;
+}
+
+// Saves configuration to disk without testing connection
+async function handleSaveConfigOnly() {
+  if (!window.electronAPI?.saveConfig) return;
+  isSavingConfig.value = true;
+  saveSuccessMsg.value = '';
+  connectionError.value = '';
+
+  try {
+    const res = await window.electronAPI.saveConfig({
+      connectionString: connectionString.value,
+      tableName: tableName.value,
+      zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value)
+    });
+
+    if (res.success) {
+      if (res.configFilePath) configFilePath.value = res.configFilePath;
+      saveSuccessMsg.value = 'Settings saved to configuration file successfully!';
+      setTimeout(() => {
+        saveSuccessMsg.value = '';
+      }, 4000);
+    } else {
+      connectionError.value = res.error || 'Failed to save configuration to file.';
+    }
+  } catch (err) {
+    connectionError.value = err.message;
+  } finally {
+    isSavingConfig.value = false;
+  }
+}
+
+// Opens the folder containing the configuration file
+function openConfigFolder() {
+  if (window.electronAPI?.openConfigFolder) {
+    window.electronAPI.openConfigFolder();
+  }
 }
 
 // Statistics
@@ -632,6 +983,121 @@ function minimizeToTray() {
   }
 }
 
+// ZATCA Issue-Invoice Verification Workflow
+async function handleZatcaVerify(inv) {
+  if (!inv || !inv.Mdocnum) return;
+  if (verifyingDocnum.value) return;
+
+  const docnum = inv.Mdocnum;
+  verifyingDocnum.value = docnum;
+
+  try {
+    // 1. Fetch line items for this Mdocnum from MasterTrx
+    // Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Munitprice
+    const itemsRes = await window.electronAPI.getInvoiceItems({
+      docnum,
+      connString: connectionString.value,
+      tableName: tableName.value
+    });
+
+    if (!itemsRes.success || !itemsRes.rows || itemsRes.rows.length === 0) {
+      throw new Error(itemsRes.error || `No line items found in table '${tableName.value}' for Mdocnum: ${docnum}`);
+    }
+
+    const rows = itemsRes.rows;
+    const firstRow = rows[0];
+
+    // 2. Extract Year, Date, and Time for invoice payload
+    // Format of invoice number: INV-Year-Mdocnum, ex: INV-2026-00044
+    let year = '2026';
+    let dateStr = '2026-11-16';
+    let timeStr = '12:00:00';
+
+    const rawMtrxDate = firstRow.Mtrxdate || inv.MtrxdateA || '';
+    const ymdMatch = String(rawMtrxDate).match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    const dmyMatch = String(rawMtrxDate).match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+
+    if (ymdMatch) {
+      year = ymdMatch[1];
+      dateStr = `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+    } else if (dmyMatch) {
+      year = dmyMatch[3];
+      dateStr = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+    }
+
+    // Time: check SYSDATE first, or non-midnight time in Mtrxdate, or current local time
+    const rawSysDate = firstRow.SYSDATE || '';
+    const timeMatch = String(rawSysDate).match(/(\d{2}:\d{2}:\d{2})/);
+    if (timeMatch) {
+      timeStr = timeMatch[1];
+    } else {
+      const mtrxTimeMatch = String(rawMtrxDate).match(/(\d{2}:\d{2}:\d{2})/);
+      if (mtrxTimeMatch && mtrxTimeMatch[1] !== '00:00:00') {
+        timeStr = mtrxTimeMatch[1];
+      } else {
+        timeStr = new Date().toTimeString().split(' ')[0];
+      }
+    }
+
+    // Format invoice number: INV-Year-Mdocnum, ex: INV-2026-00044
+    const cleanDoc = String(docnum).trim();
+    const paddedDoc = cleanDoc.length < 5 ? cleanDoc.padStart(5, '0') : cleanDoc;
+    const invoiceNumber = `INV-${year}-${paddedDoc}`;
+
+    // 3. Format items: name, quantity, price, vat_percent=0.15
+    const items = rows.map((r) => ({
+      name: (r.Mitemname || 'Item').trim(),
+      quantity: parseFloat(r.Outqty) || 1,
+      price: parseFloat(r.Munitprice) || 0,
+      vat_percent: 0.15
+    }));
+
+    // 4. Assemble payload
+    const payload = {
+      invoice: {
+        number: invoiceNumber,
+        date: dateStr,
+        time: timeStr
+      },
+      items
+    };
+
+    console.log('🚀 [ZATCA] Sending invoice payload:', payload);
+
+    // 5. Send to ZATCA Endpoint
+    const res = await window.electronAPI.sendZatcaInvoice({
+      payload,
+      endpoint: zatcaEndpoint.value
+    });
+
+    console.log('📥 [ZATCA] Verification response:', res);
+
+    // 6. Present Result in Modal
+    zatcaResult.value = {
+      success: res.success,
+      docnum,
+      invoiceNumber,
+      payload,
+      data: res.data || {},
+      status: res.status,
+      error: res.error,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    isZatcaModalOpen.value = true;
+  } catch (err) {
+    console.error('❌ [ZATCA] Verification error:', err);
+    zatcaResult.value = {
+      success: false,
+      docnum,
+      error: err.message,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    isZatcaModalOpen.value = true;
+  } finally {
+    verifyingDocnum.value = null;
+  }
+}
+
 // Handle Form Submission: Test Connection and Open Invoices
 async function handleConnect() {
   if (!window.electronAPI?.testDbConnection) return;
@@ -648,10 +1114,14 @@ async function handleConnect() {
       activeDbName.value = res.database || detectedDbName.value || 'Unimarine';
 
       // Persist config
-      await window.electronAPI.saveConfig({
+      const saveRes = await window.electronAPI.saveConfig({
         connectionString: connectionString.value,
-        tableName: tableName.value
+        tableName: tableName.value,
+        zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value)
       });
+      if (saveRes?.configFilePath) {
+        configFilePath.value = saveRes.configFilePath;
+      }
 
       // Switch to invoices view and fetch
       currentPage.value = 'invoices';
@@ -727,6 +1197,8 @@ onMounted(async () => {
       if (cfg) {
         if (cfg.connectionString) connectionString.value = cfg.connectionString;
         if (cfg.tableName) tableName.value = cfg.tableName;
+        if (cfg.zatcaEndpoint) zatcaEndpoint.value = cfg.zatcaEndpoint;
+        if (cfg.configFilePath) configFilePath.value = cfg.configFilePath;
       }
     } catch (e) {
       console.error('Failed to load saved configuration:', e);

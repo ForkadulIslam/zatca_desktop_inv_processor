@@ -10,9 +10,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testDbConnection: (connString) => ipcRenderer.invoke('sql:test-connection', connString),
   getInvoices: (params) => ipcRenderer.invoke('sql:get-invoices', params),
   getBranchInfo: (params) => ipcRenderer.invoke('sql:get-branch-info', params),
+  getInvoiceItems: (params) => ipcRenderer.invoke('sql:get-invoice-items', params),
+  // ZATCA API Integration
+  sendZatcaInvoice: (params) => ipcRenderer.invoke('zatca:issue-invoice', params),
   // Configuration persistence
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
+  openConfigFolder: () => ipcRenderer.invoke('config:open-folder'),
   // Window / Tray controls
   minimizeToTray: () => ipcRenderer.send('window:minimize-to-tray')
 });
