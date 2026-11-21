@@ -2,21 +2,75 @@ const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { testConnection, getInvoices } = require('./sqlService');
+const { testConnection, getInvoices, getBranchInfo } = require('./sqlService');
+
+// Disable GPU disk cache to eliminate "Unable to move the cache: Access is denied" errors
+app.commandLine.appendSwitch('disable-gpu-cache');
 
 const isDev = !app.isPackaged;
+
+// In production, ensure single instance lock so background tray instances don't collide
+if (!isDev) {
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    app.quit();
+    process.exit(0);
+  }
+}
+
 const devServerUrl = 'http://localhost:5173';
 const distIndexPath = path.join(__dirname, 'dist', 'index.html');
 const trayIconPath = path.join(__dirname, 'trayIcon.png');
+const configFilePath = path.join(app.getPath('userData'), 'db-config.json');
 
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+// Handle second instance launch
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+/**
+ * Loads persisted configuration
+ */
+function loadConfig() {
+  try {
+    if (fs.existsSync(configFilePath)) {
+      const data = fs.readFileSync(configFilePath, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[Config] Failed to load configuration:', err);
+  }
+  return {
+    connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
+    tableName: "masterTrx"
+  };
+}
+
+/**
+ * Persists configuration to file
+ */
+function saveConfig(config) {
+  try {
+    fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), 'utf-8');
+    return { success: true };
+  } catch (err) {
+    console.error('[Config] Failed to save configuration:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 750,
+    width: 1150,
+    height: 780,
     minWidth: 850,
     minHeight: 600,
     icon: trayIconPath,
@@ -26,6 +80,11 @@ function createWindow() {
       nodeIntegration: false
     }
   });
+
+  // Automatically open Chrome DevTools for inspection in development
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 
   // Intercept window close (X button): hide to system tray instead of quitting
   mainWindow.on('close', (event) => {
@@ -69,12 +128,22 @@ function createTray() {
     {
       label: 'Check SQL Connection',
       click: async () => {
-        const res = await testConnection();
-        if (tray.displayBalloon) {
+        const config = loadConfig();
+        const res = await testConnection(config.connectionString);
+        if (tray && tray.displayBalloon) {
           tray.displayBalloon({
             title: 'SQL Server Status',
-            content: res.success ? 'Connected to Unimarine' : `Error: ${res.error}`
+            content: res.success ? `Connected to ${res.database || 'Database'}` : `Error: ${res.error}`
           });
+        }
+      }
+    },
+    {
+      label: 'Toggle Developer Tools (Console)',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.webContents.toggleDevTools();
         }
       }
     },
@@ -90,7 +159,6 @@ function createTray() {
 
   tray.setContextMenu(contextMenu);
 
-  // Single click toggles window
   tray.on('click', () => {
     if (!mainWindow) return;
     if (mainWindow.isVisible()) {
@@ -101,7 +169,6 @@ function createTray() {
     }
   });
 
-  // Double click explicitly opens and focuses window
   tray.on('double-click', () => {
     if (mainWindow) {
       mainWindow.show();
@@ -169,16 +236,29 @@ ipcMain.on('window:minimize-to-tray', () => {
   if (mainWindow) mainWindow.hide();
 });
 
-// SQL Server IPC Handlers
-ipcMain.handle('sql:test-connection', async () => {
-  return await testConnection();
+// Config Persistence IPC Handlers
+ipcMain.handle('config:get', async () => {
+  return loadConfig();
 });
 
-ipcMain.handle('sql:get-invoices', async (event, limit = 50) => {
-  return await getInvoices(limit);
+ipcMain.handle('config:save', async (event, config) => {
+  return saveConfig(config);
 });
 
-// Lifecycle
+// SQL Server IPC Handlers with dynamic parameters
+ipcMain.handle('sql:test-connection', async (event, connectionString) => {
+  return await testConnection(connectionString);
+});
+
+ipcMain.handle('sql:get-invoices', async (event, params) => {
+  return await getInvoices(params);
+});
+
+ipcMain.handle('sql:get-branch-info', async (event, params) => {
+  return await getBranchInfo(params);
+});
+
+// App Lifecycle
 app.whenReady().then(() => {
   createWindow();
   createTray();
@@ -193,12 +273,10 @@ app.whenReady().then(() => {
   });
 });
 
-// Prevent exiting when windows close; keep alive in system tray
 app.on('window-all-closed', () => {
-  // Do nothing: tray icon keeps application running
+  // Keep alive in system tray
 });
 
-// Explicit quit handler
 app.on('before-quit', () => {
   isQuitting = true;
 });
