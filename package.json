@@ -1,15 +1,51 @@
 {
-  "name": "hello-electron-vue",
+  "name": "zatca-invoice-processor",
   "version": "1.0.0",
-  "description": "Electron + Vue 3 + Tailwind CSS Starter",
+  "description": "ZATCA Invoice Processor Desktop Application",
   "main": "main.js",
+  "author": "ZATCA Processor",
   "scripts": {
     "watch": "concurrently -k \"vite\" \"electron .\"",
     "dev": "concurrently -k \"vite\" \"electron .\"",
     "dev:vite": "vite",
     "dev:electron": "electron .",
     "build": "vite build",
-    "start": "vite build && electron ."
+    "start": "vite build && electron .",
+    "dist": "vite build && electron-builder",
+    "dist:portable": "vite build && electron-builder --win portable",
+    "dist:dir": "vite build && electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.zatca.invoiceprocessor",
+    "productName": "ZATCA Invoice Processor",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "sqlService.js",
+      "trayIcon.png",
+      "icon.png",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ZATCA Invoice Processor"
+    }
   },
   "dependencies": {
     "vue": "^3.5.13"
@@ -20,6 +56,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "electron": "^45.3.4",
+    "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7",
