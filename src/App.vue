@@ -604,7 +604,7 @@
       class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
       @click.self="isZatcaModalOpen = false"
     >
-      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl md:max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <!-- Result Header -->
         <div
           class="px-6 py-4 border-b flex items-center justify-between"
@@ -663,6 +663,28 @@
             </div>
           </div>
 
+          <!-- Database Update Status Alert -->
+          <div
+            v-if="zatcaResult.dbUpdate?.success"
+            class="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 flex items-center justify-between text-xs"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-base">💾</span>
+              <span>Database updated: <strong>INVOICE_QRCODE</strong> & <strong>INVOICE_HASHKEY</strong> saved to <strong>{{ tableName }}</strong></span>
+            </div>
+            <span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold uppercase tracking-wider">Saved to DB</span>
+          </div>
+          <div
+            v-else-if="zatcaResult.dbUpdate && !zatcaResult.dbUpdate.success"
+            class="p-3 rounded-xl bg-amber-950/40 border border-amber-800/40 text-amber-300 flex items-start gap-2 text-xs"
+          >
+            <span class="text-base leading-none">⚠️</span>
+            <div>
+              <span class="font-bold">Database Update Warning:</span>
+              <p class="text-[11px] font-mono mt-0.5 text-amber-200/90">{{ zatcaResult.dbUpdate.error }}</p>
+            </div>
+          </div>
+
           <!-- Compliance Warning (if returned by ZATCA) -->
           <div
             v-if="zatcaResult.data?.compliance?.warning"
@@ -694,26 +716,75 @@
             </div>
           </div>
 
-          <!-- QR Code Preview & Download Link -->
-          <div v-if="zatcaResult.data?.qr_url" class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4">
-            <div class="bg-white p-2.5 rounded-xl shadow-md border border-slate-700 shrink-0">
-              <img :src="zatcaResult.data.qr_url" alt="ZATCA Phase 2 QR Code" class="w-28 h-28 object-contain" />
-            </div>
-            <div class="flex-1 flex flex-col gap-1.5 text-center md:text-left">
-              <span class="text-slate-400 font-semibold text-xs flex items-center justify-center md:justify-start gap-1">
+          <!-- QR Code Scanner-Friendly Preview & Actions -->
+          <div
+            v-if="zatcaResult.data?.qr_url || zatcaResult.data?.qr_image_data"
+            class="bg-slate-950/70 border border-slate-800 rounded-2xl p-6 flex flex-col items-center gap-4 text-center shadow-inner"
+          >
+            <!-- Large High-Resolution QR Card with White Quiet Zone -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-2xl border-2 border-slate-200/90 inline-flex flex-col items-center transition-transform hover:scale-[1.01]">
+              <img
+                :src="zatcaResult.data?.qr_image_data || zatcaResult.data?.qr_url"
+                alt="ZATCA Phase 2 QR Code"
+                class="w-[280px] h-[280px] sm:w-[320px] sm:h-[320px] object-contain select-none"
+                style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;"
+                loading="eager"
+                @error="onQrImageError"
+              />
+              <div class="mt-3 pt-2.5 border-t border-slate-200 w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-700 tracking-wide uppercase">
                 <span>📱</span>
-                <span>ZATCA Phase 2 QR Code</span>
-              </span>
-              <p class="text-[11px] text-slate-500 break-all font-mono">{{ zatcaResult.data.qr_url }}</p>
-              <div class="mt-1 flex items-center justify-center md:justify-start gap-2">
-                <button
-                  @click="copyText(zatcaResult.data.qr_url, 'res-qr-url')"
-                  class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition cursor-pointer"
-                >
-                  {{ copiedKey === 'res-qr-url' ? '✓ Copied URL' : 'Copy QR URL' }}
-                </button>
+                <span>Scan with ZATCA App / Phone Camera</span>
               </div>
             </div>
+
+            <!-- QR Details & Quick Actions -->
+            <div class="w-full max-w-xl flex flex-col items-center gap-2">
+              <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <span>🛡️</span>
+                <span>ZATCA Phase 2 Cryptographic QR Code (320 × 320 px)</span>
+              </span>
+              <p v-if="zatcaResult.data?.qr_url" class="text-[11px] text-slate-500 break-all font-mono">
+                {{ zatcaResult.data.qr_url }}
+              </p>
+              <div class="mt-1 flex items-center justify-center gap-2 flex-wrap">
+                <button
+                  v-if="zatcaResult.data?.qr_url"
+                  @click="copyText(zatcaResult.data.qr_url, 'res-qr-url')"
+                  class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>{{ copiedKey === 'res-qr-url' ? '✓' : '📋' }}</span>
+                  <span>{{ copiedKey === 'res-qr-url' ? 'Copied URL' : 'Copy QR URL' }}</span>
+                </button>
+                <a
+                  :href="zatcaResult.data?.qr_image_data || zatcaResult.data?.qr_url"
+                  :download="`ZATCA-QR-${zatcaResult.docnum || 'invoice'}.png`"
+                  target="_blank"
+                  class="px-3.5 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-xs text-cyan-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>⬇️</span>
+                  <span>Open Full Image</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- QR Code Base64 Section -->
+          <div v-if="zatcaResult.data?.qr_code" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400 uppercase tracking-wider text-[10px] font-semibold flex items-center gap-1.5">
+                <span>📱</span>
+                <span>INVOICE_QRCODE (Base64)</span>
+              </span>
+              <button
+                @click="copyText(zatcaResult.data.qr_code, 'res-qr-code')"
+                class="text-cyan-400 hover:text-cyan-300 text-[11px] font-medium transition cursor-pointer"
+              >
+                {{ copiedKey === 'res-qr-code' ? '✓ Copied!' : 'Copy QR Code' }}
+              </button>
+            </div>
+            <p class="font-mono text-[11px] text-cyan-300 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 break-all select-all max-h-32 overflow-y-auto leading-relaxed">
+              {{ zatcaResult.data.qr_code }}
+            </p>
           </div>
 
           <!-- Invoice Hashes -->
@@ -812,8 +883,8 @@ const currentPage = ref('connection'); // 'connection' | 'invoices'
 const DEFAULT_CONFIG = {
   connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
   tableName: "masterTrx",
-  zatcaApiBase: "http://10.105.114.65:8000/api",
-  zatcaEndpoint: "http://10.105.114.65:8000/api/zatca/issue-invoice"
+  zatcaApiBase: "http://10.172.105.65:8000/api",
+  zatcaEndpoint: "http://10.172.105.65:8000/api/zatca/issue-invoice"
 };
 
 // Centralized Dynamic Connection Form State
@@ -983,6 +1054,19 @@ function minimizeToTray() {
   }
 }
 
+async function onQrImageError() {
+  const url = zatcaResult.value?.data?.qr_url;
+  if (!url || !window.electronAPI?.fetchImageData) return;
+  try {
+    const res = await window.electronAPI.fetchImageData(url);
+    if (res?.success && res.dataUrl && zatcaResult.value?.data) {
+      zatcaResult.value.data.qr_image_data = res.dataUrl;
+    }
+  } catch (err) {
+    console.warn('Fallback fetch for QR image failed:', err);
+  }
+}
+
 // ZATCA Issue-Invoice Verification Workflow
 async function handleZatcaVerify(inv) {
   if (!inv || !inv.Mdocnum) return;
@@ -1035,10 +1119,13 @@ async function handleZatcaVerify(inv) {
 
     console.log('🚀 [ZATCA] Sending invoice payload:', payload);
 
-    // 5. Send to ZATCA Endpoint
+    // 5. Send to ZATCA Endpoint and update MasterTrx on success
     const res = await window.electronAPI.sendZatcaInvoice({
       payload,
-      endpoint: zatcaEndpoint.value
+      endpoint: zatcaEndpoint.value,
+      docnum,
+      connString: connectionString.value,
+      tableName: tableName.value
     });
 
     console.log('📥 [ZATCA] Verification response:', res);
@@ -1050,11 +1137,17 @@ async function handleZatcaVerify(inv) {
       invoiceNumber,
       payload,
       data: res.data || {},
+      dbUpdate: res.dbUpdate,
       status: res.status,
       error: res.error,
       timestamp: new Date().toLocaleTimeString()
     };
     isZatcaModalOpen.value = true;
+
+    // 7. If successful and database updated, refresh list
+    if (res.success && res.dbUpdate?.success) {
+      fetchInvoices();
+    }
   } catch (err) {
     console.error('❌ [ZATCA] Verification error:', err);
     zatcaResult.value = {

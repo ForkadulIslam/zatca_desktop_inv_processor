@@ -129,9 +129,9 @@ async function getBranchInfo({ connString, tableName = 'branch_info', limit = 1 
   try {
     const query = `
       SELECT TOP ${limit}
-        CONVERT(VARCHAR(10), zatca_post_effective, 120) AS EffectiveDate
+        CONVERT(VARCHAR(10), ZATCA_POST_EFFECTIVE, 120) AS EffectiveDate
       FROM [${cleanTable}]
-      ORDER BY BTN_ID DESC
+      ORDER BY ZATCA_POST_EFFECTIVE DESC
     `;
     const rows = await querySQL(query, connString);
     const date = rows?.[0]?.EffectiveDate || null;
@@ -142,7 +142,8 @@ async function getBranchInfo({ connString, tableName = 'branch_info', limit = 1 
 }
 
 /**
- * Fetches unposted invoices grouped by Mdocnum filtered by branch effective date
+ * Fetches unposted invoices grouped by Mdocnum filtered by branch effective date.
+ * Mtrxdate of MasterTrx table must be equal or greater than effectiveDate of BRANCH_INFO.
  */
 async function getInvoices({
   connString,
@@ -164,12 +165,13 @@ async function getInvoices({
 
   const formattedDate = normalizeDate(targetDate);
   const dateFilter = formattedDate
-    ? `AND (CASE WHEN MtrxdateA LIKE '__/__/____' THEN CONVERT(DATETIME, MtrxdateA, 103) ELSE NULL END >= '${formattedDate}')`
+    ? `AND CAST(Mtrxdate AS DATE) >= '${formattedDate}'`
     : '';
 
   const query = `
     SELECT TOP ${limit}
       Mdocnum,
+      MAX(Mtrxdate) AS Mtrxdate,
       MAX(MtrxdateA) AS MtrxdateA,
       MAX(MsupcusName) AS MsupcusName,
       MAX(vatno) AS vatno,
@@ -221,10 +223,36 @@ async function getInvoiceItems({ docnum, connString, tableName } = {}) {
   }
 }
 
+/**
+ * Updates INVOICE_QRCODE and INVOICE_HASHKEY for all rows with the given Mdocnum
+ */
+async function updateInvoiceRecord({ docnum, qrCode, hashKey, connString, tableName } = {}) {
+  const activeConn = connString || config.getConfig().connectionString;
+  const activeTable = (tableName || config.getConfig().tableName).trim().replace(/[[\];]/g, '');
+  const cleanDocnum = String(docnum).replace(/'/g, "''").trim();
+  const cleanQr = String(qrCode || '').replace(/'/g, "''");
+  const cleanHash = String(hashKey || '').replace(/'/g, "''");
+
+  const query = `
+    UPDATE [${activeTable}]
+    SET INVOICE_QRCODE = '${cleanQr}',
+        INVOICE_HASHKEY = '${cleanHash}'
+    WHERE Mdocnum = '${cleanDocnum}'
+  `;
+
+  try {
+    await querySQL(query, activeConn);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   querySQL,
   testConnection,
   getInvoices,
   getBranchInfo,
-  getInvoiceItems
+  getInvoiceItems,
+  updateInvoiceRecord
 };

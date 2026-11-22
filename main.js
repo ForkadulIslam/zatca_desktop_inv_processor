@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const config = require('./config');
-const { testConnection, getInvoices, getBranchInfo, getInvoiceItems } = require('./sqlService');
+const { testConnection, getInvoices, getBranchInfo, getInvoiceItems, updateInvoiceRecord } = require('./sqlService');
 
 // Disable GPU disk cache to eliminate "Unable to move the cache: Access is denied" errors
 app.commandLine.appendSwitch('disable-gpu-cache');
@@ -192,8 +192,9 @@ if (isDev) {
 
 /**
  * Sends prepared invoice payload to ZATCA issue-invoice API
+ * On success, updates INVOICE_QRCODE and INVOICE_HASHKEY in MasterTrx table
  */
-async function sendZatcaInvoice(payload, endpointUrl) {
+async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tableName } = {}) {
   const endpoint = config.resolveZatcaEndpoint(endpointUrl);
   console.log('[ZATCA] Sending invoice to:', endpoint);
 
@@ -230,10 +231,44 @@ async function sendZatcaInvoice(payload, endpointUrl) {
       };
     }
 
+    // Pre-fetch QR image and embed as base64 Data URL to guarantee display in renderer
+    if (data.qr_url) {
+      try {
+        let qrImgUrl = data.qr_url;
+        if (qrImgUrl.startsWith('/')) {
+          const origin = new URL(endpoint).origin;
+          qrImgUrl = `${origin}${qrImgUrl}`;
+        }
+        const imgRes = await fetch(qrImgUrl, { signal: AbortSignal.timeout(6000) });
+        if (imgRes.ok) {
+          const arrayBuffer = await imgRes.arrayBuffer();
+          const contentType = imgRes.headers.get('content-type') || 'image/png';
+          data.qr_image_data = `data:${contentType};base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+          console.log('[ZATCA] QR image embedded as data URL');
+        }
+      } catch (imgErr) {
+        console.warn('[ZATCA] Failed to pre-fetch QR image data URL:', imgErr.message);
+      }
+    }
+
+    // On success, update INVOICE_QRCODE and INVOICE_HASHKEY in MasterTrx
+    let dbUpdate = null;
+    if (data.success && docnum && (data.qr_code || data.invoice_hash)) {
+      dbUpdate = await updateInvoiceRecord({
+        docnum,
+        qrCode: data.qr_code || '',
+        hashKey: data.invoice_hash || '',
+        connString,
+        tableName
+      });
+      console.log('[ZATCA] Database update for Doc #', docnum, ':', dbUpdate);
+    }
+
     return {
       success: data.success !== undefined ? data.success : true,
       status: response.status,
-      data
+      data,
+      dbUpdate
     };
   } catch (err) {
     console.error('[ZATCA] Request failed:', err);
@@ -268,9 +303,25 @@ ipcMain.handle('sql:test-connection', (event, connStr) => testConnection(connStr
 ipcMain.handle('sql:get-invoices', (event, params) => getInvoices(params));
 ipcMain.handle('sql:get-branch-info', (event, params) => getBranchInfo(params));
 ipcMain.handle('sql:get-invoice-items', (event, params) => getInvoiceItems(params));
+ipcMain.handle('sql:update-invoice', (event, params) => updateInvoiceRecord(params));
+
+// Image Fetch IPC Handler (bypasses browser CORS / CSP)
+ipcMain.handle('app:fetch-image-data', async (event, url) => {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const type = res.headers.get('content-type') || 'image/png';
+    return { success: true, dataUrl: `data:${type};base64,${buffer.toString('base64')}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 // ZATCA Issue-Invoice IPC Handler
-ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint }) => sendZatcaInvoice(payload, endpoint));
+ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint, docnum, connString, tableName }) =>
+  sendZatcaInvoice(payload, endpoint, { docnum, connString, tableName })
+);
 
 // App Lifecycle
 app.whenReady().then(() => {

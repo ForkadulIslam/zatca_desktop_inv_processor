@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getInvoiceItems: (params) => ipcRenderer.invoke('sql:get-invoice-items', params),
   // ZATCA API Integration
   sendZatcaInvoice: (params) => ipcRenderer.invoke('zatca:issue-invoice', params),
+  updateInvoiceRecord: (params) => ipcRenderer.invoke('sql:update-invoice', params),
+  fetchImageData: (url) => ipcRenderer.invoke('app:fetch-image-data', url),
   // Configuration persistence
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),

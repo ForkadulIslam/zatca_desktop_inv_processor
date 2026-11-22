@@ -9,7 +9,7 @@ const fs = require('fs');
 const DEFAULT_CONFIG = {
   connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
   tableName: "masterTrx",
-  zatcaEndpoint: "http://10.105.114.65:8000/api/zatca/issue-invoice"
+  zatcaEndpoint: "http://10.172.105.65:8000/api/zatca/issue-invoice"
 };
 
 function resolveConfigFilePath() {
