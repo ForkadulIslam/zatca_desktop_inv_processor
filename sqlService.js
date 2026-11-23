@@ -173,13 +173,13 @@ async function getInvoices({
       Mdocnum,
       MAX(Mtrxdate) AS Mtrxdate,
       MAX(MtrxdateA) AS MtrxdateA,
+      MAX(Mdoctype) AS Mdoctype,
       MAX(MsupcusName) AS MsupcusName,
       MAX(vatno) AS vatno,
       MAX(INVOICE_QRCODE) AS INVOICE_QRCODE,
       MAX(INVOICE_HASHKEY) AS INVOICE_HASHKEY
     FROM [${activeTable}]
-    WHERE (Mrefnumber IS NULL OR LTRIM(RTRIM(Mrefnumber)) = '')
-      AND (INVOICE_QRCODE IS NULL OR LTRIM(RTRIM(INVOICE_QRCODE)) = '')
+    WHERE (INVOICE_QRCODE IS NULL OR LTRIM(RTRIM(INVOICE_QRCODE)) = '')
       AND (INVOICE_HASHKEY IS NULL OR LTRIM(RTRIM(INVOICE_HASHKEY)) = '')
       ${dateFilter}
     GROUP BY Mdocnum

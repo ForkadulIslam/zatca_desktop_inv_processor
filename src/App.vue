@@ -230,12 +230,12 @@
           <span class="text-2xl font-bold text-cyan-400 mt-1">{{ stats.withVat }}</span>
         </div>
         <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col hover:border-slate-700 transition">
-          <span class="text-xs text-slate-400">With JATCA QR Code</span>
-          <span class="text-2xl font-bold text-emerald-400 mt-1">{{ stats.withQr }}</span>
+          <span class="text-xs text-slate-400">Sales</span>
+          <span class="text-2xl font-bold text-emerald-400 mt-1">{{ stats.sales }}</span>
         </div>
         <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col hover:border-slate-700 transition">
-          <span class="text-xs text-slate-400">With Hash Key</span>
-          <span class="text-2xl font-bold text-indigo-400 mt-1">{{ stats.withHash }}</span>
+          <span class="text-xs text-slate-400">Return Sales</span>
+          <span class="text-2xl font-bold text-rose-400 mt-1">{{ stats.returnSales }}</span>
         </div>
       </div>
 
@@ -275,18 +275,18 @@
               All ({{ invoices.length }})
             </button>
             <button
-              @click="filterTab = 'has_qr'"
+              @click="filterTab = 'sale'"
               class="px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-              :class="filterTab === 'has_qr' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'"
+              :class="filterTab === 'sale' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'"
             >
-              With QR ({{ stats.withQr }})
+              Sales ({{ stats.sales }})
             </button>
             <button
-              @click="filterTab = 'missing_qr'"
+              @click="filterTab = 'return'"
               class="px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-              :class="filterTab === 'missing_qr' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'"
+              :class="filterTab === 'return' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'"
             >
-              Missing QR ({{ stats.missingQr }})
+              Returns ({{ stats.returnSales }})
             </button>
           </div>
         </div>
@@ -342,8 +342,7 @@
                 <th class="py-3.5 px-4 font-semibold text-slate-300 whitespace-nowrap">MtrxdateA</th>
                 <th class="py-3.5 px-4 font-semibold text-slate-300">MsupcusName</th>
                 <th class="py-3.5 px-4 font-semibold text-slate-300 whitespace-nowrap">vatno</th>
-                <th class="py-3.5 px-4 font-semibold text-slate-300 text-center whitespace-nowrap">INVOICE_QRCODE</th>
-                <th class="py-3.5 px-4 font-semibold text-slate-300 whitespace-nowrap">INVOICE_HASHKEY</th>
+                <th class="py-3.5 px-4 font-semibold text-slate-300 whitespace-nowrap">Type</th>
                 <th class="py-3.5 px-4 font-semibold text-slate-300 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
@@ -400,42 +399,25 @@
                   <span v-else class="text-slate-600 font-mono">—</span>
                 </td>
 
-                <!-- 6. INVOICE_QRCODE -->
-                <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                <!-- 6. Type (Target Mdoctype from MasterTrx: RET => 'Return Sale', else 'Sale') -->
+                <td class="py-3.5 px-4 whitespace-nowrap">
                   <span
-                    v-if="inv.INVOICE_QRCODE && String(inv.INVOICE_QRCODE).trim()"
-                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    v-if="String(inv.Mdoctype || '').trim().toUpperCase() === 'RET'"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20"
                   >
-                    <span>✓</span>
-                    <span>Ready</span>
+                    <span>↩️</span>
+                    <span>Return Sale</span>
                   </span>
                   <span
                     v-else
-                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                   >
-                    <span>!</span>
-                    <span>Missing</span>
+                    <span>🛒</span>
+                    <span>Sale</span>
                   </span>
                 </td>
 
-                <!-- 7. INVOICE_HASHKEY -->
-                <td class="py-3.5 px-4 whitespace-nowrap max-w-[180px]">
-                  <div v-if="inv.INVOICE_HASHKEY && String(inv.INVOICE_HASHKEY).trim()" class="flex items-center gap-1.5">
-                    <span class="font-mono text-indigo-300 text-[11px] truncate bg-indigo-950/30 border border-indigo-900/30 px-2 py-0.5 rounded" :title="inv.INVOICE_HASHKEY">
-                      {{ truncate(inv.INVOICE_HASHKEY, 14) }}
-                    </span>
-                    <button
-                      @click.stop="copyText(inv.INVOICE_HASHKEY, `hash-${idx}`)"
-                      class="text-xs text-slate-500 hover:text-indigo-400 transition"
-                      title="Copy INVOICE_HASHKEY"
-                    >
-                      {{ copiedKey === `hash-${idx}` ? '✓' : '📋' }}
-                    </button>
-                  </div>
-                  <span v-else class="text-slate-600 font-mono">—</span>
-                </td>
-
-                <!-- 8. Actions -->
+                <!-- 7. Actions -->
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
                   <div class="flex items-center justify-end gap-2">
                     <button
@@ -868,7 +850,7 @@
     <!-- Page Footer -->
     <footer class="border-t border-slate-900 px-6 py-3 text-center text-xs text-slate-600 flex items-center justify-between">
       <span>Electron 45 • Vue 3 • Tailwind CSS</span>
-      <span>Columns: Mdocnum, MtrxdateA, msupcusname, vatno, Invoice_qrcode, invoice_haskey</span>
+      <span>Columns: Mdocnum, MtrxdateA, MsupcusName, vatno, Type (Mdoctype)</span>
     </footer>
   </div>
 </template>
@@ -912,7 +894,7 @@ const invoices = ref([]);
 const limit = ref(50);
 const effectiveDate = ref('');
 const searchQuery = ref('');
-const filterTab = ref('all'); // 'all' | 'has_qr' | 'missing_qr'
+const filterTab = ref('all'); // 'all' | 'sale' | 'return'
 const isLoadingInvoices = ref(false);
 const invoiceError = ref('');
 const lastUpdated = ref('');
@@ -995,12 +977,13 @@ function openConfigFolder() {
 
 // Statistics
 const stats = computed(() => {
-  const withQr = invoices.value.filter(i => Boolean(i.INVOICE_QRCODE && String(i.INVOICE_QRCODE).trim())).length;
+  const returnSales = invoices.value.filter(
+    (i) => String(i.Mdoctype || '').trim().toUpperCase() === 'RET'
+  ).length;
   return {
-    withVat: invoices.value.filter(i => Boolean(i.vatno && String(i.vatno).trim())).length,
-    withQr,
-    missingQr: invoices.value.length - withQr,
-    withHash: invoices.value.filter(i => Boolean(i.INVOICE_HASHKEY && String(i.INVOICE_HASHKEY).trim())).length
+    withVat: invoices.value.filter((i) => Boolean(i.vatno && String(i.vatno).trim())).length,
+    sales: invoices.value.length - returnSales,
+    returnSales
   };
 });
 
@@ -1008,21 +991,23 @@ const stats = computed(() => {
 const filteredInvoices = computed(() => {
   let list = invoices.value;
 
-  // Filter tab selection
-  if (filterTab.value === 'has_qr') {
-    list = list.filter(i => Boolean(i.INVOICE_QRCODE && String(i.INVOICE_QRCODE).trim()));
-  } else if (filterTab.value === 'missing_qr') {
-    list = list.filter(i => !i.INVOICE_QRCODE || !String(i.INVOICE_QRCODE).trim());
+  // Filter tab selection (All, Sales, Returns)
+  if (filterTab.value === 'sale') {
+    list = list.filter((i) => String(i.Mdoctype || '').trim().toUpperCase() !== 'RET');
+  } else if (filterTab.value === 'return') {
+    list = list.filter((i) => String(i.Mdoctype || '').trim().toUpperCase() === 'RET');
   }
 
-  // Search query filter across all 6 columns
+  // Search query filter across all visible fields + type label
   if (!searchQuery.value.trim()) return list;
   const q = searchQuery.value.toLowerCase();
-  return list.filter((row) =>
-    [row.Mdocnum, row.MtrxdateA, row.MsupcusName, row.vatno, row.INVOICE_HASHKEY].some(
+  return list.filter((row) => {
+    const isRet = String(row.Mdoctype || '').trim().toUpperCase() === 'RET';
+    const typeLabel = isRet ? 'return sale' : 'sale';
+    return [row.Mdocnum, row.MtrxdateA, row.MsupcusName, row.vatno, row.Mdoctype, typeLabel].some(
       (val) => String(val ?? '').toLowerCase().includes(q)
-    )
-  );
+    );
+  });
 });
 
 function truncate(str, len = 20) {
@@ -1227,6 +1212,7 @@ async function fetchInvoices() {
       invoices.value = (res.rows || []).map((r) => ({
         Mdocnum: r.Mdocnum || '',
         MtrxdateA: r.MtrxdateA || '',
+        Mdoctype: r.Mdoctype || '',
         MsupcusName: r.MsupcusName || '',
         vatno: r.vatno || '',
         INVOICE_QRCODE: r.INVOICE_QRCODE || '',
