@@ -191,12 +191,12 @@ if (isDev) {
 }
 
 /**
- * Sends prepared invoice payload to ZATCA issue-invoice API
+ * Sends prepared invoice or credit note payload to ZATCA API
  * On success, updates INVOICE_QRCODE and INVOICE_HASHKEY in MasterTrx table
  */
-async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tableName } = {}) {
-  const endpoint = config.resolveZatcaEndpoint(endpointUrl);
-  console.log('[ZATCA] Sending invoice to:', endpoint);
+async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tableName, docType } = {}) {
+  const endpoint = config.resolveZatcaEndpoint(endpointUrl, docType);
+  console.log(`[ZATCA] Sending ${String(docType).toUpperCase() === 'RET' ? 'Credit Note' : 'Invoice'} to:`, endpoint);
 
   try {
     const controller = new AbortController();
@@ -252,12 +252,16 @@ async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tabl
     }
 
     // On success, update INVOICE_QRCODE and INVOICE_HASHKEY in MasterTrx
+    // Note: Credit note returns credit_note_hash, invoice returns invoice_hash
+    const hashKey = data.credit_note_hash || data.invoice_hash || '';
+    const qrCode = data.qr_code || '';
+
     let dbUpdate = null;
-    if (data.success && docnum && (data.qr_code || data.invoice_hash)) {
+    if (data.success && docnum && (qrCode || hashKey)) {
       dbUpdate = await updateInvoiceRecord({
         docnum,
-        qrCode: data.qr_code || '',
-        hashKey: data.invoice_hash || '',
+        qrCode,
+        hashKey,
         connString,
         tableName
       });
@@ -318,9 +322,9 @@ ipcMain.handle('app:fetch-image-data', async (event, url) => {
   }
 });
 
-// ZATCA Issue-Invoice IPC Handler
-ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint, docnum, connString, tableName }) =>
-  sendZatcaInvoice(payload, endpoint, { docnum, connString, tableName })
+// ZATCA Issue-Invoice & Issue-Credit-Note IPC Handler
+ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint, docnum, connString, tableName, docType }) =>
+  sendZatcaInvoice(payload, endpoint, { docnum, connString, tableName, docType })
 );
 
 // App Lifecycle

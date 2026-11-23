@@ -207,7 +207,12 @@ async function getInvoiceItems({ docnum, connString, tableName } = {}) {
     SELECT 
       Mitemname,
       Outqty,
+      Inqty,
       Munitprice,
+      Mdoctype,
+      Mrefnumber,
+      Des,
+      remarks,
       CONVERT(VARCHAR(10), Mtrxdate, 120) AS TrxDate,
       CONVERT(VARCHAR(8), SYSDATE, 108) AS TrxTime,
       YEAR(Mtrxdate) AS TrxYear

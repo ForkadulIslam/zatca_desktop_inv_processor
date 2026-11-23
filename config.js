@@ -31,11 +31,16 @@ function resolveConfigFilePath() {
 const configFilePath = resolveConfigFilePath();
 
 /**
- * Normalizes any ZATCA URL (base /api or full endpoint) to the issue-invoice endpoint
+ * Normalizes any ZATCA URL (base /api or full endpoint) to the issue-invoice or issue-credit-note endpoint
  */
-function resolveZatcaEndpoint(url) {
-  const base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
-  return base.endsWith('/zatca/issue-invoice') ? base : `${base}/zatca/issue-invoice`;
+function resolveZatcaEndpoint(url, docType = 'INV') {
+  let base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
+  base = base.replace(/\/zatca\/(issue-invoice|issue-credit-note)$/i, '');
+  base = base.replace(/\/api$/i, '');
+
+  const isReturn = String(docType || '').trim().toUpperCase() === 'RET';
+  const path = isReturn ? '/api/zatca/issue-credit-note' : '/api/zatca/issue-invoice';
+  return `${base}${path}`;
 }
 
 let activeConfig = { ...DEFAULT_CONFIG };

@@ -421,10 +421,10 @@
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
                   <div class="flex items-center justify-end gap-2">
                     <button
-                      @click.stop="handleZatcaVerify(inv)"
+                      @click.stop="handleZatcaVerify(inv, inv.Mdoctype)"
                       :disabled="verifyingDocnum === inv.Mdocnum"
                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/40 active:scale-95 text-xs font-semibold transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                      title="Verify and issue this invoice with ZATCA Phase 2"
+                      title="Verify and issue this document with ZATCA Phase 2"
                     >
                       <svg v-if="verifyingDocnum === inv.Mdocnum" class="animate-spin h-3.5 w-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -556,7 +556,7 @@
         <!-- Modal Footer -->
         <div class="px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <button
-            @click="handleZatcaVerify(selectedInvoice)"
+            @click="handleZatcaVerify(selectedInvoice, selectedInvoice.Mdoctype)"
             :disabled="verifyingDocnum === selectedInvoice.Mdocnum"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-600/25"
           >
@@ -603,18 +603,19 @@
             <div>
               <div class="flex items-center gap-2">
                 <h3 class="text-base font-bold text-white">
-                  {{ zatcaResult.success ? 'ZATCA Verification Succeeded' : 'ZATCA Verification Notice' }}
+                  {{ zatcaResult.success ? (zatcaResult.isReturn ? 'ZATCA Credit Note Succeeded' : 'ZATCA Verification Succeeded') : 'ZATCA Verification Notice' }}
                 </h3>
                 <span
                   class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
                   :class="zatcaResult.success ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'"
                 >
-                  {{ zatcaResult.success ? 'Issued & Signed' : 'Failed' }}
+                  {{ zatcaResult.success ? (zatcaResult.isReturn ? 'Credit Note Issued & Signed' : 'Issued & Signed') : 'Failed' }}
                 </span>
               </div>
               <p class="text-xs text-slate-400 mt-0.5">
                 Doc #: <strong class="text-cyan-400 font-mono">{{ zatcaResult.docnum }}</strong>
-                <span v-if="zatcaResult.invoiceNumber"> • Number: <strong class="text-white font-mono">{{ zatcaResult.invoiceNumber }}</strong></span>
+                <span v-if="zatcaResult.invoiceNumber"> • {{ zatcaResult.isReturn ? 'Credit Note #' : 'Invoice #' }}: <strong class="text-white font-mono">{{ zatcaResult.invoiceNumber }}</strong></span>
+                <span v-if="zatcaResult.refInvNumber"> • Ref: <strong class="text-indigo-300 font-mono">{{ zatcaResult.refInvNumber }}</strong></span>
                 <span> • {{ zatcaResult.timestamp }}</span>
               </p>
             </div>
@@ -680,14 +681,14 @@
           </div>
 
           <!-- Metadata Badges Grid -->
-          <div v-if="zatcaResult.data?.invoice_id || zatcaResult.data?.invoice_counter || zatcaResult.data?.unit" class="grid grid-cols-3 gap-3">
+          <div v-if="zatcaResult.data?.credit_note_id || zatcaResult.data?.invoice_id || zatcaResult.data?.credit_note_counter || zatcaResult.data?.invoice_counter || zatcaResult.data?.unit" class="grid grid-cols-3 gap-3">
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-              <span class="text-slate-500 text-[10px] font-semibold uppercase block">Invoice ID</span>
-              <span class="text-white font-mono font-bold text-sm">{{ zatcaResult.data?.invoice_id ?? '—' }}</span>
+              <span class="text-slate-500 text-[10px] font-semibold uppercase block">{{ zatcaResult.isReturn ? 'Credit Note ID' : 'Invoice ID' }}</span>
+              <span class="text-white font-mono font-bold text-sm">{{ zatcaResult.data?.credit_note_id ?? zatcaResult.data?.invoice_id ?? '—' }}</span>
             </div>
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-              <span class="text-slate-500 text-[10px] font-semibold uppercase block">Invoice Counter</span>
-              <span class="text-cyan-400 font-mono font-bold text-sm">#{{ zatcaResult.data?.invoice_counter ?? '—' }}</span>
+              <span class="text-slate-500 text-[10px] font-semibold uppercase block">{{ zatcaResult.isReturn ? 'Credit Note Counter' : 'Invoice Counter' }}</span>
+              <span class="text-cyan-400 font-mono font-bold text-sm">#{{ zatcaResult.data?.credit_note_counter ?? zatcaResult.data?.invoice_counter ?? '—' }}</span>
             </div>
             <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
               <span class="text-slate-500 text-[10px] font-semibold uppercase block">Unit Status</span>
@@ -696,6 +697,18 @@
                 <span class="capitalize">{{ zatcaResult.data?.unit?.status || 'Active' }}</span>
               </span>
             </div>
+          </div>
+
+          <!-- Reference Invoice Notice (Credit Notes) -->
+          <div
+            v-if="zatcaResult.data?.reference_invoice_number || zatcaResult.refInvNumber"
+            class="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-800/40 text-indigo-300 flex items-center justify-between text-xs"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-base">🔗</span>
+              <span>Reference Invoice: <strong class="font-mono text-white">{{ zatcaResult.data?.reference_invoice_number || zatcaResult.refInvNumber }}</strong></span>
+            </div>
+            <span v-if="zatcaResult.data?.reason" class="text-[11px] text-indigo-200/90 italic">Reason: {{ zatcaResult.data.reason }}</span>
           </div>
 
           <!-- QR Code Scanner-Friendly Preview & Actions -->
@@ -769,22 +782,22 @@
             </p>
           </div>
 
-          <!-- Invoice Hashes -->
-          <div v-if="zatcaResult.data?.invoice_hash" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
+          <!-- Invoice / Credit Note Hashes -->
+          <div v-if="zatcaResult.data?.credit_note_hash || zatcaResult.data?.invoice_hash" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
             <div class="flex items-center justify-between">
               <span class="text-slate-400 uppercase tracking-wider text-[10px] font-semibold flex items-center gap-1.5">
                 <span>🔑</span>
-                <span>Invoice Hash (SHA-256)</span>
+                <span>{{ zatcaResult.isReturn ? 'Credit Note Hash (SHA-256)' : 'Invoice Hash (SHA-256)' }}</span>
               </span>
               <button
-                @click="copyText(zatcaResult.data.invoice_hash, 'res-inv-hash')"
+                @click="copyText(zatcaResult.data?.credit_note_hash || zatcaResult.data?.invoice_hash, 'res-inv-hash')"
                 class="text-cyan-400 hover:text-cyan-300 text-[11px] font-medium transition cursor-pointer"
               >
                 {{ copiedKey === 'res-inv-hash' ? '✓ Copied!' : 'Copy Hash' }}
               </button>
             </div>
             <p class="font-mono text-[11px] text-cyan-300 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 break-all select-all">
-              {{ zatcaResult.data.invoice_hash }}
+              {{ zatcaResult.data?.credit_note_hash || zatcaResult.data?.invoice_hash }}
             </p>
           </div>
 
@@ -882,11 +895,14 @@ const isConnected = ref(false);
 const connectionError = ref('');
 
 /**
- * Normalizes any ZATCA URL (base /api or full route) to the issue-invoice endpoint
+ * Normalizes any ZATCA URL (base /api or full route) to the issue-invoice or issue-credit-note endpoint
  */
-function resolveZatcaEndpoint(url) {
-  const base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
-  return base.endsWith('/zatca/issue-invoice') ? base : `${base}/zatca/issue-invoice`;
+function resolveZatcaEndpoint(url, docType = 'INV') {
+  let base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
+  base = base.replace(/\/zatca\/(issue-invoice|issue-credit-note)$/i, '');
+  base = base.replace(/\/api$/i, '');
+  const isReturn = String(docType || '').trim().toUpperCase() === 'RET';
+  return `${base}/api/zatca/${isReturn ? 'issue-credit-note' : 'issue-invoice'}`;
 }
 
 // Invoices State
@@ -1052,17 +1068,19 @@ async function onQrImageError() {
   }
 }
 
-// ZATCA Issue-Invoice Verification Workflow
-async function handleZatcaVerify(inv) {
+// ZATCA Issue-Invoice & Issue-Credit-Note Verification Workflow
+async function handleZatcaVerify(inv, type) {
   if (!inv || !inv.Mdocnum) return;
   if (verifyingDocnum.value) return;
 
   const docnum = inv.Mdocnum;
+  const docType = String(type || inv.Mdoctype || '').trim().toUpperCase();
+  const isReturn = docType === 'RET';
   verifyingDocnum.value = docnum;
 
   try {
     // 1. Fetch line items for this Mdocnum from MasterTrx
-    // Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Munitprice
+    // Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Inqty, Munitprice, Mdoctype, Mrefnumber, Des, remarks
     const itemsRes = await window.electronAPI.getInvoiceItems({
       docnum,
       connString: connectionString.value,
@@ -1074,41 +1092,84 @@ async function handleZatcaVerify(inv) {
     }
 
     const rows = itemsRes.rows;
-    const firstRow = rows[0];
+    // For returns, prioritize items matching Mdoctype === 'RET'; for sales, non-RET
+    const targetRows = isReturn
+      ? rows.filter((r) => String(r.Mdoctype || '').trim().toUpperCase() === 'RET')
+      : rows.filter((r) => String(r.Mdoctype || '').trim().toUpperCase() !== 'RET');
+    const effectiveRows = targetRows.length > 0 ? targetRows : rows;
+    const firstRow = effectiveRows[0];
 
-    // 2. Prepare invoice payload using direct SQL-formatted date/time
-    // Format of invoice number: INV-Year-Mdocnum, ex: INV-2026-00044
+    // 2. Prepare date/time & formatting
     const year = firstRow.TrxYear || new Date().getFullYear();
     const dateStr = firstRow.TrxDate || new Date().toISOString().split('T')[0];
     const timeStr = firstRow.TrxTime || '12:00:00';
     const cleanDoc = String(docnum).trim();
-    const invoiceNumber = `INV-${year}-${cleanDoc.padStart(5, '0')}`;
+    const formattedDoc = cleanDoc.length < 5 ? cleanDoc.padStart(5, '0') : cleanDoc;
 
-    // 3. Format items: name, quantity, price, vat_percent=0.15
-    const items = rows.map((r) => ({
+    // 3. Format items: name, quantity (Outqty for sales, Inqty for returns), price, vat_percent=0.15
+    const items = effectiveRows.map((r) => ({
       name: (r.Mitemname || 'Item').trim(),
-      quantity: parseFloat(r.Outqty) || 1,
+      quantity: isReturn
+        ? parseFloat(r.Inqty) || parseFloat(r.Outqty) || 1
+        : parseFloat(r.Outqty) || parseFloat(r.Inqty) || 1,
       price: parseFloat(r.Munitprice) || 0,
       vat_percent: 0.15
     }));
 
-    // 4. Assemble payload
-    const payload = {
-      invoice: {
-        number: invoiceNumber,
-        date: dateStr,
-        time: timeStr
-      },
-      items
-    };
+    // 4. Assemble payload based on Type (Credit Note for RET, Invoice otherwise)
+    let payload;
+    let docNumber;
+    let refInvoiceNumber = null;
 
-    console.log('🚀 [ZATCA] Sending invoice payload:', payload);
+    if (isReturn) {
+      // Credit Note format: CN-Year-Mdocnum
+      docNumber = `CN-${year}-${formattedDoc}`;
+
+      // Reference invoice number format: INV-Year-Mrefnumber
+      const rawRef = String(firstRow.Mrefnumber || inv.Mrefnumber || '').trim();
+      if (rawRef.toUpperCase().startsWith('INV-')) {
+        refInvoiceNumber = rawRef;
+      } else if (rawRef) {
+        const formattedRef = rawRef.length < 5 ? rawRef.padStart(5, '0') : rawRef;
+        refInvoiceNumber = `INV-${year}-${formattedRef}`;
+      } else {
+        refInvoiceNumber = `INV-${year}-${formattedDoc}`;
+      }
+
+      const reason = String(firstRow.Des || firstRow.remarks || 'Customer returned goods').trim();
+
+      payload = {
+        reference_invoice_number: refInvoiceNumber,
+        reason,
+        payment_method_code: '10',
+        credit_note: {
+          number: docNumber,
+          date: dateStr,
+          time: timeStr
+        },
+        items
+      };
+    } else {
+      // Standard Simplified Invoice
+      docNumber = `INV-${year}-${formattedDoc}`;
+      payload = {
+        invoice: {
+          number: docNumber,
+          date: dateStr,
+          time: timeStr
+        },
+        items
+      };
+    }
+
+    console.log(`🚀 [ZATCA] Sending ${isReturn ? 'credit note' : 'invoice'} payload:`, payload);
 
     // 5. Send to ZATCA Endpoint and update MasterTrx on success
     const res = await window.electronAPI.sendZatcaInvoice({
       payload,
       endpoint: zatcaEndpoint.value,
       docnum,
+      docType,
       connString: connectionString.value,
       tableName: tableName.value
     });
@@ -1119,7 +1180,10 @@ async function handleZatcaVerify(inv) {
     zatcaResult.value = {
       success: res.success,
       docnum,
-      invoiceNumber,
+      docType,
+      isReturn,
+      invoiceNumber: docNumber,
+      refInvNumber: refInvoiceNumber,
       payload,
       data: res.data || {},
       dbUpdate: res.dbUpdate,
@@ -1138,6 +1202,8 @@ async function handleZatcaVerify(inv) {
     zatcaResult.value = {
       success: false,
       docnum,
+      docType,
+      isReturn,
       error: err.message,
       timestamp: new Date().toLocaleTimeString()
     };
