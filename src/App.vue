@@ -176,6 +176,59 @@
             <p class="mt-1 text-[11px] text-slate-500">Base URL or complete endpoint. Used globally for issuing and verifying invoices.</p>
           </div>
 
+          <!-- Branch Product Key Input with Connect Button -->
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+              Branch Product Key
+            </label>
+            <div class="flex items-center gap-2">
+              <div class="relative flex-1">
+                <input
+                  v-model="branchProductKey"
+                  type="text"
+                  placeholder="e.g. 20 or PRD-XXXX-XXXX"
+                  class="w-full bg-slate-950/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition"
+                />
+              </div>
+              <button
+                type="button"
+                @click="handleBranchConnect"
+                class="px-3 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer shrink-0 shadow-sm"
+                title="Connect Branch Product Key"
+              >
+                Connect
+              </button>
+            </div>
+            <p class="mt-1 text-[11px] text-slate-500">
+              Sent as <code class="text-cyan-400 font-mono">unit_id</code> in the ZATCA invoice &amp; credit note payload.
+            </p>
+          </div>
+
+          <!-- VAT Included Price Checkbox -->
+          <div class="bg-slate-950/70 border border-slate-800 hover:border-slate-700/80 rounded-xl p-3.5 transition">
+            <label class="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                v-model="vatIncludedPrice"
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-900 transition cursor-pointer"
+              />
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-slate-200">Vat included price</span>
+                  <span
+                    v-if="vatIncludedPrice"
+                    class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                  >
+                    Deduct 15% VAT on Verify
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  Enable if unit prices in <strong class="text-slate-300 font-mono">{{ tableName }}</strong> (Munitprice) already include 15% VAT. When checked, the application will recalculate the price by deducting 15% VAT before sending the payload to ZATCA.
+                </p>
+              </div>
+            </label>
+          </div>
+
           <!-- Error Alert Banner -->
           <div v-if="connectionError" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-xs text-red-400 flex items-start gap-3">
             <span class="text-base leading-none">⚠️</span>
@@ -349,7 +402,7 @@
             <tbody class="divide-y divide-slate-800/60 font-sans">
               <tr
                 v-for="(inv, idx) in filteredInvoices"
-                :key="inv.Mdocnum || idx"
+                :key="`${inv.Mdocnum}-${inv.Mdoctype || 'INV'}-${idx}`"
                 class="hover:bg-slate-800/40 transition cursor-pointer group"
                 @click="openDetails(inv)"
               >
@@ -422,11 +475,11 @@
                   <div class="flex items-center justify-end gap-2">
                     <button
                       @click.stop="handleZatcaVerify(inv, inv.Mdoctype)"
-                      :disabled="verifyingDocnum === inv.Mdocnum"
+                      :disabled="verifyingDocnum === `${inv.Mdocnum}_${inv.Mdoctype}`"
                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-white border border-emerald-500/40 active:scale-95 text-xs font-semibold transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                       title="Verify and issue this document with ZATCA Phase 2"
                     >
-                      <svg v-if="verifyingDocnum === inv.Mdocnum" class="animate-spin h-3.5 w-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none">
+                      <svg v-if="verifyingDocnum === `${inv.Mdocnum}_${inv.Mdoctype}`" class="animate-spin h-3.5 w-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
                       </svg>
@@ -557,15 +610,15 @@
         <div class="px-6 py-3.5 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <button
             @click="handleZatcaVerify(selectedInvoice, selectedInvoice.Mdoctype)"
-            :disabled="verifyingDocnum === selectedInvoice.Mdocnum"
+            :disabled="verifyingDocnum === `${selectedInvoice.Mdocnum}_${selectedInvoice.Mdoctype}`"
             class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-600/25"
           >
-            <svg v-if="verifyingDocnum === selectedInvoice.Mdocnum" class="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+            <svg v-if="verifyingDocnum === `${selectedInvoice.Mdocnum}_${selectedInvoice.Mdoctype}`" class="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
             </svg>
             <span v-else>🛡️</span>
-            <span>{{ verifyingDocnum === selectedInvoice.Mdocnum ? 'Verifying with ZATCA...' : 'ZATCA Verify' }}</span>
+            <span>{{ verifyingDocnum === `${selectedInvoice.Mdocnum}_${selectedInvoice.Mdoctype}` ? 'Verifying with ZATCA...' : 'ZATCA Verify' }}</span>
           </button>
 
           <button
@@ -879,13 +932,17 @@ const DEFAULT_CONFIG = {
   connectionString: "Server=MASKAT\\SQLEXPRESS;Database=Unimarine;Trusted_Connection=True;Connection Timeout=30;",
   tableName: "masterTrx",
   zatcaApiBase: "http://10.172.105.65:8000/api",
-  zatcaEndpoint: "http://10.172.105.65:8000/api/zatca/issue-invoice"
+  zatcaEndpoint: "http://10.172.105.65:8000/api/zatca/issue-invoice",
+  vatIncludedPrice: false,
+  branchProductKey: ""
 };
 
 // Centralized Dynamic Connection Form State
 const connectionString = ref(DEFAULT_CONFIG.connectionString);
 const tableName = ref(DEFAULT_CONFIG.tableName);
 const zatcaEndpoint = ref(DEFAULT_CONFIG.zatcaEndpoint);
+const vatIncludedPrice = ref(DEFAULT_CONFIG.vatIncludedPrice);
+const branchProductKey = ref(DEFAULT_CONFIG.branchProductKey);
 const configFilePath = ref('');
 const saveSuccessMsg = ref('');
 const isSavingConfig = ref(false);
@@ -893,6 +950,11 @@ const activeDbName = ref('');
 const isConnecting = ref(false);
 const isConnected = ref(false);
 const connectionError = ref('');
+
+// Branch Product Key Connect handler (placeholder for future implementation)
+function handleBranchConnect() {
+  console.log('🔗 [Branch] Connect clicked for product key:', branchProductKey.value);
+}
 
 /**
  * Normalizes any ZATCA URL (base /api or full route) to the issue-invoice or issue-credit-note endpoint
@@ -952,6 +1014,8 @@ function resetToDefault() {
   connectionString.value = DEFAULT_CONFIG.connectionString;
   tableName.value = DEFAULT_CONFIG.tableName;
   zatcaEndpoint.value = DEFAULT_CONFIG.zatcaEndpoint;
+  vatIncludedPrice.value = DEFAULT_CONFIG.vatIncludedPrice;
+  branchProductKey.value = DEFAULT_CONFIG.branchProductKey;
 }
 
 // Saves configuration to disk without testing connection
@@ -965,7 +1029,9 @@ async function handleSaveConfigOnly() {
     const res = await window.electronAPI.saveConfig({
       connectionString: connectionString.value,
       tableName: tableName.value,
-      zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value)
+      zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value),
+      vatIncludedPrice: vatIncludedPrice.value,
+      branchProductKey: branchProductKey.value
     });
 
     if (res.success) {
@@ -1076,15 +1142,18 @@ async function handleZatcaVerify(inv, type) {
   const docnum = inv.Mdocnum;
   const docType = String(type || inv.Mdoctype || '').trim().toUpperCase();
   const isReturn = docType === 'RET';
-  verifyingDocnum.value = docnum;
+  const verifyKey = `${docnum}_${docType}`;
+  verifyingDocnum.value = verifyKey;
 
   try {
-    // 1. Fetch line items for this Mdocnum from MasterTrx
-    // Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty, Inqty, Munitprice, Mdoctype, Mrefnumber, Des, remarks
+    // 1. Fetch line items for this Mdocnum and docType from MasterTrx
+    // Selects Mtrxdate, MtrxdateA, SYSDATE, Mitemname, Outqty/Msaleqty, Inqty/Mretqty, Munitprice, Mdoctype, Mrefnumber, Des, remarks
     const itemsRes = await window.electronAPI.getInvoiceItems({
       docnum,
+      docType,
       connString: connectionString.value,
-      tableName: tableName.value
+      tableName: tableName.value,
+      vatIncludedPrice: vatIncludedPrice.value
     });
 
     if (!itemsRes.success || !itemsRes.rows || itemsRes.rows.length === 0) {
@@ -1106,20 +1175,35 @@ async function handleZatcaVerify(inv, type) {
     const cleanDoc = String(docnum).trim();
     const formattedDoc = cleanDoc.length < 5 ? cleanDoc.padStart(5, '0') : cleanDoc;
 
-    // 3. Format items: name, quantity (Outqty for sales, Inqty for returns), price, vat_percent=0.15
-    const items = effectiveRows.map((r) => ({
-      name: (r.Mitemname || 'Item').trim(),
-      quantity: isReturn
-        ? parseFloat(r.Inqty) || parseFloat(r.Outqty) || 1
-        : parseFloat(r.Outqty) || parseFloat(r.Inqty) || 1,
-      price: parseFloat(r.Munitprice) || 0,
-      vat_percent: 0.15
-    }));
+    // 3. Format items: name, quantity (Outqty/Msaleqty for sales, Inqty/Mretqty for returns), price, vat_percent=0.15
+    const items = effectiveRows.map((r) => {
+      const rawPrice = parseFloat(r.Munitprice) || 0;
+      // If "Vat included price" is checked, recalculate price by deducting 15% VAT: Net = Gross / 1.15
+      const price = vatIncludedPrice.value
+        ? Number((rawPrice / 1.15).toFixed(2))
+        : rawPrice;
+
+      const saleQty = parseFloat(r.Outqty !== undefined && r.Outqty !== null ? r.Outqty : r.Msaleqty) || 0;
+      const retQty = parseFloat(r.Inqty !== undefined && r.Inqty !== null ? r.Inqty : r.Mretqty) || 0;
+
+      return {
+        name: (r.Mitemname || 'Item').trim(),
+        quantity: isReturn
+          ? retQty || saleQty || 1
+          : saleQty || retQty || 1,
+        price,
+        vat_percent: 0.15
+      };
+    });
 
     // 4. Assemble payload based on Type (Credit Note for RET, Invoice otherwise)
     let payload;
     let docNumber;
     let refInvoiceNumber = null;
+
+    // Unit ID from Branch Product Key
+    const rawUnitId = String(branchProductKey.value || '').trim();
+    const unitId = /^\d+$/.test(rawUnitId) ? Number(rawUnitId) : rawUnitId;
 
     if (isReturn) {
       // Credit Note format: CN-Year-Mdocnum
@@ -1139,6 +1223,7 @@ async function handleZatcaVerify(inv, type) {
       const reason = String(firstRow.Des || firstRow.remarks || 'Customer returned goods').trim();
 
       payload = {
+        unit_id: unitId,
         reference_invoice_number: refInvoiceNumber,
         reason,
         payment_method_code: '10',
@@ -1153,6 +1238,7 @@ async function handleZatcaVerify(inv, type) {
       // Standard Simplified Invoice
       docNumber = `INV-${year}-${formattedDoc}`;
       payload = {
+        unit_id: unitId,
         invoice: {
           number: docNumber,
           date: dateStr,
@@ -1232,7 +1318,9 @@ async function handleConnect() {
       const saveRes = await window.electronAPI.saveConfig({
         connectionString: connectionString.value,
         tableName: tableName.value,
-        zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value)
+        zatcaEndpoint: resolveZatcaEndpoint(zatcaEndpoint.value),
+        vatIncludedPrice: vatIncludedPrice.value,
+        branchProductKey: branchProductKey.value
       });
       if (saveRes?.configFilePath) {
         configFilePath.value = saveRes.configFilePath;
@@ -1314,6 +1402,8 @@ onMounted(async () => {
         if (cfg.connectionString) connectionString.value = cfg.connectionString;
         if (cfg.tableName) tableName.value = cfg.tableName;
         if (cfg.zatcaEndpoint) zatcaEndpoint.value = cfg.zatcaEndpoint;
+        if (cfg.vatIncludedPrice !== undefined) vatIncludedPrice.value = Boolean(cfg.vatIncludedPrice);
+        if (cfg.branchProductKey !== undefined) branchProductKey.value = cfg.branchProductKey;
         if (cfg.configFilePath) configFilePath.value = cfg.configFilePath;
       }
     } catch (e) {

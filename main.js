@@ -260,12 +260,13 @@ async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tabl
     if (data.success && docnum && (qrCode || hashKey)) {
       dbUpdate = await updateInvoiceRecord({
         docnum,
+        docType,
         qrCode,
         hashKey,
         connString,
         tableName
       });
-      console.log('[ZATCA] Database update for Doc #', docnum, ':', dbUpdate);
+      console.log('[ZATCA] Database update for Doc #', docnum, '(', docType, '):', dbUpdate);
     }
 
     return {

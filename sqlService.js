@@ -171,9 +171,9 @@ async function getInvoices({
   const query = `
     SELECT TOP ${limit}
       Mdocnum,
+      Mdoctype,
       MAX(Mtrxdate) AS Mtrxdate,
-      MAX(MtrxdateA) AS MtrxdateA,
-      MAX(Mdoctype) AS Mdoctype,
+      COALESCE(NULLIF(MAX(MtrxdateA), ''), CONVERT(VARCHAR(10), MAX(Mtrxdate), 103), '') AS MtrxdateA,
       MAX(MsupcusName) AS MsupcusName,
       MAX(vatno) AS vatno,
       MAX(INVOICE_QRCODE) AS INVOICE_QRCODE,
@@ -182,8 +182,8 @@ async function getInvoices({
     WHERE (INVOICE_QRCODE IS NULL OR LTRIM(RTRIM(INVOICE_QRCODE)) = '')
       AND (INVOICE_HASHKEY IS NULL OR LTRIM(RTRIM(INVOICE_HASHKEY)) = '')
       ${dateFilter}
-    GROUP BY Mdocnum
-    ORDER BY Mdocnum DESC
+    GROUP BY Mdocnum, Mdoctype
+    ORDER BY Mdocnum DESC, Mdoctype ASC
   `;
 
   try {
@@ -195,30 +195,63 @@ async function getInvoices({
 }
 
 /**
- * Fetches line items for a specific Mdocnum.
+ * Fetches line items for a specific Mdocnum and optional docType.
+ * When vatIncludedPrice is true, queries Msaleqty and Mretqty instead of Outqty and Inqty.
  * Formats TrxDate (YYYY-MM-DD), TrxTime (HH:mm:ss), and TrxYear (YYYY) directly in SQL.
  */
-async function getInvoiceItems({ docnum, connString, tableName } = {}) {
+async function getInvoiceItems({ docnum, docType, connString, tableName, vatIncludedPrice } = {}) {
   const activeConn = connString || config.getConfig().connectionString;
   const activeTable = (tableName || config.getConfig().tableName).trim().replace(/[[\];]/g, '');
   const cleanDocnum = String(docnum).replace(/'/g, "''").trim();
+  const cleanDocType = docType ? String(docType).replace(/'/g, "''").trim().toUpperCase() : '';
+  const isVatIncluded = vatIncludedPrice !== undefined
+    ? Boolean(vatIncludedPrice)
+    : Boolean(config.getConfig().vatIncludedPrice);
 
-  const query = `
-    SELECT 
-      Mitemname,
-      Outqty,
-      Inqty,
-      Munitprice,
-      Mdoctype,
-      Mrefnumber,
-      Des,
-      remarks,
-      CONVERT(VARCHAR(10), Mtrxdate, 120) AS TrxDate,
-      CONVERT(VARCHAR(8), SYSDATE, 108) AS TrxTime,
-      YEAR(Mtrxdate) AS TrxYear
-    FROM [${activeTable}]
-    WHERE Mdocnum = '${cleanDocnum}'
-  `;
+  const typeFilter = cleanDocType
+    ? cleanDocType === 'RET'
+      ? `AND UPPER(LTRIM(RTRIM(Mdoctype))) = 'RET'`
+      : `AND (Mdoctype IS NULL OR UPPER(LTRIM(RTRIM(Mdoctype))) != 'RET')`
+    : '';
+
+  // If vatIncludedPrice is enabled, database uses Msaleqty and Mretqty instead of Outqty and Inqty
+  const query = isVatIncluded
+    ? `
+      SELECT 
+        Mitemname,
+        Msaleqty AS Outqty,
+        Mretqty AS Inqty,
+        Msaleqty,
+        Mretqty,
+        Munitprice,
+        Mdoctype,
+        Mrefnumber,
+        Des,
+        remarks,
+        CONVERT(VARCHAR(10), Mtrxdate, 120) AS TrxDate,
+        CONVERT(VARCHAR(8), SYSDATE, 108) AS TrxTime,
+        YEAR(Mtrxdate) AS TrxYear
+      FROM [${activeTable}]
+      WHERE Mdocnum = '${cleanDocnum}'
+        ${typeFilter}
+    `
+    : `
+      SELECT 
+        Mitemname,
+        Outqty,
+        Inqty,
+        Munitprice,
+        Mdoctype,
+        Mrefnumber,
+        Des,
+        remarks,
+        CONVERT(VARCHAR(10), Mtrxdate, 120) AS TrxDate,
+        CONVERT(VARCHAR(8), SYSDATE, 108) AS TrxTime,
+        YEAR(Mtrxdate) AS TrxYear
+      FROM [${activeTable}]
+      WHERE Mdocnum = '${cleanDocnum}'
+        ${typeFilter}
+    `;
 
   try {
     const rows = await querySQL(query, activeConn);
@@ -229,20 +262,28 @@ async function getInvoiceItems({ docnum, connString, tableName } = {}) {
 }
 
 /**
- * Updates INVOICE_QRCODE and INVOICE_HASHKEY for all rows with the given Mdocnum
+ * Updates INVOICE_QRCODE and INVOICE_HASHKEY for the given Mdocnum and optional docType
  */
-async function updateInvoiceRecord({ docnum, qrCode, hashKey, connString, tableName } = {}) {
+async function updateInvoiceRecord({ docnum, docType, qrCode, hashKey, connString, tableName } = {}) {
   const activeConn = connString || config.getConfig().connectionString;
   const activeTable = (tableName || config.getConfig().tableName).trim().replace(/[[\];]/g, '');
   const cleanDocnum = String(docnum).replace(/'/g, "''").trim();
   const cleanQr = String(qrCode || '').replace(/'/g, "''");
   const cleanHash = String(hashKey || '').replace(/'/g, "''");
+  const cleanDocType = docType ? String(docType).replace(/'/g, "''").trim().toUpperCase() : '';
+
+  const typeFilter = cleanDocType
+    ? cleanDocType === 'RET'
+      ? `AND UPPER(LTRIM(RTRIM(Mdoctype))) = 'RET'`
+      : `AND (Mdoctype IS NULL OR UPPER(LTRIM(RTRIM(Mdoctype))) != 'RET')`
+    : '';
 
   const query = `
     UPDATE [${activeTable}]
     SET INVOICE_QRCODE = '${cleanQr}',
         INVOICE_HASHKEY = '${cleanHash}'
     WHERE Mdocnum = '${cleanDocnum}'
+      ${typeFilter}
   `;
 
   try {

@@ -27,6 +27,7 @@
       "main.js",
       "preload.js",
       "sqlService.js",
+      "config.js",
       "trayIcon.png",
       "icon.png",
       "package.json"
