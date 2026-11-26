@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const config = require('./config');
-const { testConnection, getInvoices, getBranchInfo, getInvoiceItems, updateInvoiceRecord } = require('./sqlService');
+const { testConnection, getInvoices, getBranchInfo, getInvoiceItems, updateInvoiceRecord, logInvoiceError } = require('./sqlService');
 
 // Disable GPU disk cache to eliminate "Unable to move the cache: Access is denied" errors
 app.commandLine.appendSwitch('disable-gpu-cache');
@@ -194,7 +194,7 @@ if (isDev) {
  * Sends prepared invoice or credit note payload to ZATCA API
  * On success, updates INVOICE_QRCODE and INVOICE_HASHKEY in MasterTrx table
  */
-async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tableName, docType } = {}) {
+async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tableName, docType, branchId } = {}) {
   const endpoint = config.resolveZatcaEndpoint(endpointUrl, docType);
   console.log(`[ZATCA] Sending ${String(docType).toUpperCase() === 'RET' ? 'Credit Note' : 'Invoice'} to:`, endpoint);
 
@@ -222,7 +222,16 @@ async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tabl
       data = { raw: text };
     }
 
-    if (!response.ok && !data.success) {
+    if (!response.ok || data.success === false) {
+      // Store failure in E_INVOICE_ERROR table (E_INV_XML column)
+      await logInvoiceError({
+        docnum,
+        docType,
+        branchId,
+        errorLog: data || `HTTP ${response.status}: ${response.statusText}`,
+        connString
+      });
+
       return {
         success: false,
         status: response.status,
@@ -277,10 +286,82 @@ async function sendZatcaInvoice(payload, endpointUrl, { docnum, connString, tabl
     };
   } catch (err) {
     console.error('[ZATCA] Request failed:', err);
+    const errText = err.name === 'AbortError'
+      ? 'Request timed out connecting to ZATCA server (20s).'
+      : `Network Error: ${err.message}`;
+
+    // Store failure in E_INVOICE_ERROR table (E_INV_XML column)
+    await logInvoiceError({
+      docnum,
+      docType,
+      branchId,
+      errorLog: errText,
+      connString
+    });
+
+    return {
+      success: false,
+      error: errText
+    };
+  }
+}
+
+/**
+ * Sends branch product key to ZATCA match-branch API
+ */
+async function matchBranchProductKey(branchProductKey, endpointUrl) {
+  const endpoint = config.resolveMatchBranchEndpoint(endpointUrl);
+  console.log('[ZATCA] Matching branch product key at:', endpoint);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ branch_product_key: branchProductKey }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (!response.ok || data.success === false) {
+      return {
+        success: false,
+        status: response.status,
+        error: data.message || `HTTP ${response.status}: ${response.statusText}`,
+        data
+      };
+    }
+
+    return {
+      success: data.success !== undefined ? data.success : true,
+      status: response.status,
+      id: data.id ?? data.data?.id ?? data.unit_id ?? data.data?.unit_id,
+      custom_id: data.custom_id ?? data.data?.custom_id,
+      branch_name: data.branch_name ?? data.data?.branch_name,
+      vat_number: data.vat_number ?? data.data?.vat_number,
+      message: data.message,
+      data
+    };
+  } catch (err) {
+    console.error('[ZATCA] match-branch request failed:', err);
     return {
       success: false,
       error: err.name === 'AbortError'
-        ? 'Request timed out connecting to ZATCA server (20s).'
+        ? 'Request timed out connecting to ZATCA server (15s).'
         : `Network Error: ${err.message}`
     };
   }
@@ -309,6 +390,7 @@ ipcMain.handle('sql:get-invoices', (event, params) => getInvoices(params));
 ipcMain.handle('sql:get-branch-info', (event, params) => getBranchInfo(params));
 ipcMain.handle('sql:get-invoice-items', (event, params) => getInvoiceItems(params));
 ipcMain.handle('sql:update-invoice', (event, params) => updateInvoiceRecord(params));
+ipcMain.handle('sql:log-invoice-error', (event, params) => logInvoiceError(params));
 
 // Image Fetch IPC Handler (bypasses browser CORS / CSP)
 ipcMain.handle('app:fetch-image-data', async (event, url) => {
@@ -324,8 +406,13 @@ ipcMain.handle('app:fetch-image-data', async (event, url) => {
 });
 
 // ZATCA Issue-Invoice & Issue-Credit-Note IPC Handler
-ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint, docnum, connString, tableName, docType }) =>
-  sendZatcaInvoice(payload, endpoint, { docnum, connString, tableName, docType })
+ipcMain.handle('zatca:issue-invoice', (event, { payload, endpoint, docnum, connString, tableName, docType, branchId }) =>
+  sendZatcaInvoice(payload, endpoint, { docnum, connString, tableName, docType, branchId })
+);
+
+// ZATCA Match-Branch IPC Handler
+ipcMain.handle('zatca:match-branch', (event, { branchProductKey, endpoint }) =>
+  matchBranchProductKey(branchProductKey, endpoint)
 );
 
 // App Lifecycle

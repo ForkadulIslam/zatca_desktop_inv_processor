@@ -294,11 +294,39 @@ async function updateInvoiceRecord({ docnum, docType, qrCode, hashKey, connStrin
   }
 }
 
+/**
+ * Logs verification error into E_INVOICE_ERROR table.
+ * Column E_INV_XML stores the error log / response.
+ */
+async function logInvoiceError({ docnum, docType, branchId, errorLog, connString } = {}) {
+  const activeConn = connString || config.getConfig().connectionString;
+  const cleanDoc = docnum ? String(docnum).replace(/\D/g, '') : null;
+  const cleanDocType = docType ? `'${String(docType).slice(0, 4).replace(/'/g, "''")}'` : 'NULL';
+  const cleanBranch = branchId ? `'${String(branchId).slice(0, 4).replace(/'/g, "''")}'` : 'NULL';
+  const cleanLog = String(typeof errorLog === 'object' ? JSON.stringify(errorLog) : errorLog || '')
+    .replace(/'/g, "''");
+
+  const query = `
+    INSERT INTO [E_INVOICE_ERROR] (DOCNO, BRN_ID, DOC_TYPE, E_INV_XML)
+    VALUES (${cleanDoc || 'NULL'}, ${cleanBranch}, ${cleanDocType}, '${cleanLog}')
+  `;
+
+  try {
+    await querySQL(query, activeConn);
+    console.log(`[E_INVOICE_ERROR] Logged error for Doc #${docnum} (${docType}) to E_INVOICE_ERROR`);
+    return { success: true };
+  } catch (error) {
+    console.error('[E_INVOICE_ERROR] Failed to log error to DB:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   querySQL,
   testConnection,
   getInvoices,
   getBranchInfo,
   getInvoiceItems,
-  updateInvoiceRecord
+  updateInvoiceRecord,
+  logInvoiceError
 };

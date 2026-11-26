@@ -11,7 +11,9 @@ const DEFAULT_CONFIG = {
   tableName: "masterTrx",
   zatcaEndpoint: "http://10.172.105.65:8000/api/zatca/issue-invoice",
   vatIncludedPrice: false,
-  branchProductKey: ""
+  branchProductKey: "",
+  unitId: null,
+  branchInfo: null
 };
 
 function resolveConfigFilePath() {
@@ -37,12 +39,22 @@ const configFilePath = resolveConfigFilePath();
  */
 function resolveZatcaEndpoint(url, docType = 'INV') {
   let base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
-  base = base.replace(/\/zatca\/(issue-invoice|issue-credit-note)$/i, '');
+  base = base.replace(/\/zatca\/(issue-invoice|issue-credit-note|match-branch)$/i, '');
   base = base.replace(/\/api$/i, '');
 
   const isReturn = String(docType || '').trim().toUpperCase() === 'RET';
   const path = isReturn ? '/api/zatca/issue-credit-note' : '/api/zatca/issue-invoice';
   return `${base}${path}`;
+}
+
+/**
+ * Normalizes any ZATCA URL to the match-branch endpoint
+ */
+function resolveMatchBranchEndpoint(url) {
+  let base = (url || DEFAULT_CONFIG.zatcaEndpoint).trim().replace(/\/+$/, '');
+  base = base.replace(/\/zatca\/(issue-invoice|issue-credit-note|match-branch)$/i, '');
+  base = base.replace(/\/api$/i, '');
+  return `${base}/api/zatca/match-branch`;
 }
 
 let activeConfig = { ...DEFAULT_CONFIG };
@@ -88,5 +100,6 @@ module.exports = {
   configFilePath,
   getConfig: () => ({ ...activeConfig, configFilePath }),
   saveConfig,
-  resolveZatcaEndpoint
+  resolveZatcaEndpoint,
+  resolveMatchBranchEndpoint
 };
