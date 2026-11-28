@@ -7,7 +7,12 @@
           <span class="text-xl">🧾</span>
         </div>
         <div>
-          <h1 class="text-base font-bold text-white tracking-wide">ZATCA Invoice Processor</h1>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-bold text-white tracking-wide">ZATCA Invoice Processor</h1>
+            <span v-if="appVersion" class="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-800 text-cyan-400 border border-slate-700">
+              v{{ appVersion }}
+            </span>
+          </div>
           <p class="text-xs text-slate-400">
             Database: <span class="text-cyan-400 font-mono font-medium">{{ activeDbName || detectedDbName || 'Not Connected' }}</span>
             • Table: <span class="text-indigo-400 font-mono font-medium">{{ tableName || 'masterTrx' }}</span>
@@ -17,6 +22,17 @@
 
       <!-- Header Action Controls -->
       <div class="flex items-center gap-2.5">
+        <!-- Check for Updates Button -->
+        <button
+          @click="handleCheckForUpdates"
+          :disabled="updaterState.status === 'checking' || updaterState.status === 'downloading'"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-50 text-slate-300 border border-slate-700 transition cursor-pointer"
+          title="Check for application updates from GitHub Releases"
+        >
+          <span>{{ updaterState.status === 'checking' ? '⏳' : '⬆️' }}</span>
+          <span>{{ updaterState.status === 'checking' ? 'Checking...' : 'Updates' }}</span>
+        </button>
+
         <!-- Switch between Connection Settings and Invoices Page -->
         <button
           v-if="currentPage === 'invoices'"
@@ -69,6 +85,45 @@
         </span>
       </div>
     </header>
+
+    <!-- Auto-Updater Banner -->
+    <div
+      v-if="showUpdaterBanner"
+      class="px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 transition"
+      :class="updaterBannerClass"
+    >
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <span class="text-base leading-none shrink-0">
+          {{ updaterState.status === 'downloaded' ? '🚀' : updaterState.status === 'error' ? '⚠️' : updaterState.status === 'up-to-date' ? '✅' : '⬇️' }}
+        </span>
+        <div class="flex-1 min-w-0">
+          <p class="font-medium truncate">{{ updaterState.message }}</p>
+          <div v-if="updaterState.status === 'downloading'" class="mt-1.5 w-full max-w-md bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div
+              class="bg-cyan-400 h-1.5 rounded-full transition-all duration-300"
+              :style="{ width: `${updaterState.percent || 0}%` }"
+            ></div>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          v-if="updaterState.status === 'downloaded'"
+          @click="handleInstallUpdate"
+          class="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow transition cursor-pointer"
+        >
+          Restart &amp; Install v{{ updaterState.version }}
+        </button>
+        <button
+          v-if="updaterState.status !== 'downloading'"
+          @click="dismissUpdaterBanner"
+          class="px-2 py-1 rounded text-slate-400 hover:text-white transition cursor-pointer"
+          title="Dismiss"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
 
     <!-- ========================================================================= -->
     <!-- PAGE 1: DATABASE & TABLE CONNECTION SETUP PAGE                            -->
@@ -1058,7 +1113,54 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+
+// App Version & Auto-Updater State
+const appVersion = ref('');
+const updaterState = ref({
+  status: 'idle', // 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error' | 'dev-mode'
+  version: '',
+  percent: 0,
+  message: ''
+});
+const showUpdaterBanner = ref(false);
+let unsubscribeUpdater = null;
+
+const updaterBannerClass = computed(() => {
+  switch (updaterState.value.status) {
+    case 'downloaded':
+      return 'bg-emerald-950/80 border-emerald-500/30 text-emerald-300';
+    case 'error':
+      return 'bg-red-950/70 border-red-500/30 text-red-300';
+    case 'up-to-date':
+      return 'bg-emerald-950/40 border-emerald-500/20 text-emerald-300';
+    case 'dev-mode':
+      return 'bg-amber-950/50 border-amber-500/30 text-amber-300';
+    default:
+      return 'bg-cyan-950/60 border-cyan-500/30 text-cyan-200';
+  }
+});
+
+async function handleCheckForUpdates() {
+  if (!window.electronAPI?.checkForUpdates) return;
+  showUpdaterBanner.value = true;
+  updaterState.value = {
+    ...updaterState.value,
+    status: 'checking',
+    message: 'Checking for updates...'
+  };
+  await window.electronAPI.checkForUpdates();
+}
+
+async function handleInstallUpdate() {
+  if (window.electronAPI?.installUpdate) {
+    await window.electronAPI.installUpdate();
+  }
+}
+
+function dismissUpdaterBanner() {
+  showUpdaterBanner.value = false;
+}
 
 // Navigation & Screen View
 const currentPage = ref('connection'); // 'connection' | 'invoices'
@@ -1729,6 +1831,34 @@ onMounted(async () => {
   console.log('%c🧾 JATCA Invoice Processor Initialized', 'color: #06b6d4; font-size: 14px; font-weight: bold;');
   console.log('🔧 Electron API Available:', Boolean(window.electronAPI));
 
+  if (window.electronAPI?.getAppVersion) {
+    try {
+      appVersion.value = await window.electronAPI.getAppVersion();
+    } catch (e) {
+      console.warn('Failed to fetch app version:', e);
+    }
+  }
+
+  if (window.electronAPI?.onUpdaterStatus) {
+    unsubscribeUpdater = window.electronAPI.onUpdaterStatus((payload) => {
+      updaterState.value = {
+        ...updaterState.value,
+        ...payload
+      };
+      // Show banner automatically for active/important update states; auto-hide 'up-to-date' after 5s
+      if (['available', 'downloading', 'downloaded', 'error', 'dev-mode', 'up-to-date'].includes(payload.status)) {
+        showUpdaterBanner.value = true;
+      }
+      if (payload.status === 'up-to-date' || payload.status === 'dev-mode') {
+        setTimeout(() => {
+          if (updaterState.value.status === payload.status) {
+            showUpdaterBanner.value = false;
+          }
+        }, 5000);
+      }
+    });
+  }
+
   if (window.electronAPI?.getConfig) {
     try {
       const cfg = await window.electronAPI.getConfig();
@@ -1760,6 +1890,12 @@ onMounted(async () => {
     } catch (e) {
       console.log('Initial connect deferred to manual submission:', e);
     }
+  }
+});
+
+onUnmounted(() => {
+  if (typeof unsubscribeUpdater === 'function') {
+    unsubscribeUpdater();
   }
 });
 </script>

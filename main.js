@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -111,6 +112,16 @@ function createTray() {
           mainWindow.show();
           mainWindow.webContents.toggleDevTools();
         }
+      }
+    },
+    {
+      label: 'Check for Updates',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+        triggerUpdateCheck();
       }
     },
     { type: 'separator' },
@@ -415,10 +426,123 @@ ipcMain.handle('zatca:match-branch', (event, { branchProductKey, endpoint }) =>
   matchBranchProductKey(branchProductKey, endpoint)
 );
 
+// =========================================================================
+// AUTO-UPDATER CONFIGURATION (GitHub Releases via electron-updater)
+// =========================================================================
+let updateCheckInterval = null;
+
+function sendUpdaterStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:status', payload);
+  }
+}
+
+function triggerUpdateCheck() {
+  if (isDev) {
+    sendUpdaterStatus({
+      status: 'dev-mode',
+      message: 'Auto-updater is active only in installed production builds.'
+    });
+    return Promise.resolve({
+      success: false,
+      devMode: true,
+      message: 'Auto-updater is active only in installed production builds.'
+    });
+  }
+  return autoUpdater.checkForUpdates().catch((err) => {
+    console.error('[Updater] Check failed:', err.message);
+    return { success: false, error: err.message };
+  });
+}
+
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[Updater] Checking for updates...');
+    sendUpdaterStatus({ status: 'checking', message: 'Checking for updates...' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('[Updater] Update available:', info.version);
+    sendUpdaterStatus({
+      status: 'available',
+      version: info.version,
+      message: `New version v${info.version} found. Downloading automatically...`
+    });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('[Updater] App is up to date:', info.version);
+    sendUpdaterStatus({
+      status: 'up-to-date',
+      version: info.version,
+      message: `You are running the latest version (v${info.version}).`
+    });
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    const percent = Math.round(progressObj.percent || 0);
+    sendUpdaterStatus({
+      status: 'downloading',
+      percent,
+      transferred: progressObj.transferred,
+      total: progressObj.total,
+      message: `Downloading update... ${percent}%`
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[Updater] Update downloaded:', info.version);
+    sendUpdaterStatus({
+      status: 'downloaded',
+      version: info.version,
+      message: `Version v${info.version} is ready to install.`
+    });
+    if (tray?.displayBalloon) {
+      tray.displayBalloon({
+        title: 'ZATCA Invoice Processor Update Ready',
+        content: `Version v${info.version} has been downloaded. Open the app to restart & install.`
+      });
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[Updater] Error:', err.message);
+    sendUpdaterStatus({
+      status: 'error',
+      message: err.message || 'Failed to check for updates.'
+    });
+  });
+
+  if (!isDev) {
+    // Initial check shortly after launch
+    setTimeout(() => {
+      triggerUpdateCheck();
+    }, 3000);
+
+    // Periodic check every 15 minutes so background/tray instances update promptly
+    updateCheckInterval = setInterval(() => {
+      triggerUpdateCheck();
+    }, 15 * 60 * 1000);
+  }
+}
+
+ipcMain.handle('app:get-version', () => app.getVersion());
+ipcMain.handle('updater:check', () => triggerUpdateCheck());
+ipcMain.handle('updater:install', () => {
+  isQuitting = true;
+  if (updateCheckInterval) clearInterval(updateCheckInterval);
+  autoUpdater.quitAndInstall(false, true);
+  return { success: true };
+});
+
 // App Lifecycle
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (mainWindow) {

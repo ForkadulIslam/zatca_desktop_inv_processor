@@ -12,6 +12,7 @@
     "build": "vite build",
     "start": "vite build && electron .",
     "dist": "vite build && electron-builder",
+    "dist:publish": "vite build && electron-builder --publish always",
     "dist:portable": "vite build && electron-builder --win portable",
     "dist:dir": "vite build && electron-builder --dir"
   },
@@ -19,6 +20,13 @@
     "appId": "com.zatca.invoiceprocessor",
     "productName": "ZATCA Invoice Processor",
     "electronDist": "node_modules/electron/dist",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ForkadulIslam",
+        "repo": "zatca_desktop_inv_processor"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -49,6 +57,7 @@
     }
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "vue": "^3.5.13"
   },
   "devDependencies": {

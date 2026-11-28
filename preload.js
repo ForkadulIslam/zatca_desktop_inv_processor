@@ -22,5 +22,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (config) => ipcRenderer.invoke('config:save', config),
   openConfigFolder: () => ipcRenderer.invoke('config:open-folder'),
   // Window / Tray controls
-  minimizeToTray: () => ipcRenderer.send('window:minimize-to-tray')
+  minimizeToTray: () => ipcRenderer.send('window:minimize-to-tray'),
+  // Auto-Updater & Version
+  getAppVersion: () => ipcRenderer.invoke('app:get-version'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterStatus: (callback) => {
+    const listener = (_event, status) => callback(status);
+    ipcRenderer.on('updater:status', listener);
+    return () => ipcRenderer.removeListener('updater:status', listener);
+  }
 });
