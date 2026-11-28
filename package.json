@@ -1,6 +1,6 @@
 {
   "name": "zatca-invoice-processor",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "ZATCA Invoice Processor Desktop Application",
   "main": "main.js",
   "author": "ZATCA Processor",
@@ -24,7 +24,8 @@
       {
         "provider": "github",
         "owner": "ForkadulIslam",
-        "repo": "zatca_desktop_inv_processor"
+        "repo": "zatca_desktop_inv_processor",
+        "releaseType": "release"
       }
     ],
     "directories": {
