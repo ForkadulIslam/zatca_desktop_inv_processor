@@ -13,10 +13,7 @@
               v{{ appVersion }}
             </span>
           </div>
-          <p class="text-xs text-slate-400">
-            Database: <span class="text-cyan-400 font-mono font-medium">{{ activeDbName || detectedDbName || 'Not Connected' }}</span>
-            • Table: <span class="text-indigo-400 font-mono font-medium">{{ tableName || 'masterTrx' }}</span>
-          </p>
+
         </div>
       </div>
 
@@ -71,18 +68,8 @@
         >
           <span>🏢</span>
           <span class="font-semibold max-w-[150px] truncate">{{ branchInfo.custom_id || branchInfo.branch_name }}</span>
-          <span class="text-emerald-500">•</span>
-          <span class="font-mono text-[11px] text-cyan-300">unit_id: {{ unitId }}</span>
         </div>
 
-        <!-- Status Indicator Pill -->
-        <span
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border"
-          :class="statusBadgeClass"
-        >
-          <span class="w-2 h-2 rounded-full" :class="statusDotClass"></span>
-          <span>{{ statusBadgeText }}</span>
-        </span>
       </div>
     </header>
 

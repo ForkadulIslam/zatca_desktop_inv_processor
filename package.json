@@ -1,6 +1,6 @@
 {
   "name": "zatca-invoice-processor",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "ZATCA Invoice Processor Desktop Application",
   "main": "main.js",
   "author": "ZATCA Processor",
@@ -54,7 +54,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ZATCA Invoice Processor"
+      "shortcutName": "ZATCA Invoice Processor",
+      "deleteAppDataOnUninstall": true,
+      "artifactName": "ZATCA-Invoice-Processor-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ZATCA-Invoice-Processor-Portable-${version}.${ext}"
     }
   },
   "dependencies": {
